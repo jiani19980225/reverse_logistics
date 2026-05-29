@@ -1,0 +1,6 @@
+# Ablation: remove adaptive inspection (inspect all, phi still active)
+# Use keyword extractor but force full inspection
+override:
+  extractor: "keyword"
+  use_adaptive_inspection: false
+  description: "S2S phi active; all assets get full L2 inspection"

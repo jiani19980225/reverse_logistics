@@ -1,0 +1,58 @@
+# S3: Consumer Electronics — calibrated from public sources
+# See calibration/CALIBRATION_SOURCES.md for derivation
+name: s3_consumer_electronics
+n_assets: 1000
+
+asset_types:
+  - {name: smartphone, weight: 0.45, components: {pcb: 1, battery: 1, display: 1, camera: 2}}
+  - {name: laptop, weight: 0.30, components: {pcb: 1, battery: 1, display: 1, keyboard: 1, ssd: 1}}
+  - {name: tablet, weight: 0.25, components: {pcb: 1, battery: 1, display: 1}}
+
+# Per-component share of recovery value (iFixit, material recovery literature)
+# These are LOW because S3 value is primarily at L0 (whole-unit refurb)
+prices:
+  pcb: 8
+  battery: 5
+  display: 15
+  camera: 3
+  keyboard: 7
+  ssd: 12
+
+# Weighted from CPSC remedy distribution: 0.42*0.90 + 0.38*0.55 + 0.20*0.15 = 0.617
+base_yields:
+  pcb: 0.62
+  battery: 0.62
+  display: 0.62
+  camera: 0.62
+  keyboard: 0.62
+  ssd: 0.62
+
+# Returns processing industry (Optoro, Returnly)
+inspection_costs:
+  skip: {cost: 0, time_min: 0}
+  l1: {cost: 10, time_min: 3}
+  l2: {cost: 20, time_min: 5}
+
+processing_costs:
+  l2: {cost: 12, time_min: 10}
+  l1: {cost: 6, time_min: 4}
+  l0_refurb: {cost: 8, time_min: 5}
+  scrap: {cost: 0, time_min: 1}
+  rework: {cost: 30, time_min: 8}
+  # Whole-unit refurb resale values by product type (Back Market, Decluttr)
+  refurb_values:
+    smartphone: 120
+    laptop: 250
+    tablet: 180
+
+# 20 workers * 8hr = 160 hr/day
+capacity:
+  daily_hours: 160
+
+# S3 uses narrow gap (paper Section V-B)
+thresholds:
+  tau_h: 0.50
+  tau_l: 0.45
+
+kappa_base: 10
+gamma: 1.0

@@ -1,0 +1,59 @@
+# S1: IT Infrastructure — calibrated from public sources
+# See calibration/CALIBRATION_SOURCES.md for derivation
+name: s1_it_infrastructure
+n_assets: 500
+
+asset_types:
+  - {name: standard_compute, weight: 0.35, components: {cpu: 2, dimm: 16, ssd: 2}}
+  - {name: gpu_heavy, weight: 0.20, components: {cpu: 2, dimm: 16, gpu: 4, ssd: 2}}
+  - {name: storage_heavy, weight: 0.20, components: {cpu: 2, dimm: 8, hdd: 12}}
+  - {name: high_memory, weight: 0.15, components: {cpu: 2, dimm: 32, ssd: 2}}
+  - {name: older_gen, weight: 0.10, components: {cpu: 2, dimm: 16, ssd: 2}}
+
+# Used/refurbished market midpoints (PCPartPicker, eBay completed listings)
+prices:
+  cpu: 275
+  dimm: 22
+  gpu: 1900
+  ssd: 70
+  hdd: 35
+
+# Weighted yield: 60% young (0-3yr) + 40% old (3-5yr)
+# From Backblaze AFR, WEEE stats, Google memory studies
+base_yields:
+  cpu: 0.902
+  dimm: 0.868
+  gpu: 0.852
+  ssd: 0.742
+  hdd: 0.650
+
+# Industry decommission statistics
+note_distribution:
+  clean: 0.25
+  mixed: 0.35
+  damaged: 0.25
+  ambiguous: 0.15
+
+# BLS NAICS 562920 loaded rate $75/hr
+inspection_costs:
+  skip: {cost: 0, time_min: 0}
+  l1: {cost: 19, time_min: 15}
+  l2: {cost: 75, time_min: 60}
+
+processing_costs:
+  l2: {cost: 40, time_min: 32}
+  l1: {cost: 13, time_min: 10}
+  scrap: {cost: 0, time_min: 5}
+
+# 15 techs * 8hr * 5 days = 600 hr/week
+capacity:
+  weekly_hours: 600
+
+# Paper Section V-B
+thresholds:
+  tau_h: 0.50
+  tau_l: 0.25
+
+# Paper Section III-A
+kappa_base: 10
+gamma: 1.0

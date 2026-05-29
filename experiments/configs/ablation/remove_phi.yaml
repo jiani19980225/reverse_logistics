@@ -1,0 +1,6 @@
+# Ablation: remove phi adjustment (phi=1.0, sigma still active)
+# Use NullExtractor but keep adaptive inspection enabled
+override:
+  extractor: "null"
+  use_adaptive_inspection: true
+  description: "No S2S phi adjustment; adaptive inspection still active"

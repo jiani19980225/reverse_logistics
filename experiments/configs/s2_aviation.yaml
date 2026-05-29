@@ -1,0 +1,64 @@
+# S2: Aviation MRO — calibrated from public sources
+# See calibration/CALIBRATION_SOURCES.md for derivation
+name: s2_aviation_mro
+n_assets: 500
+
+asset_types:
+  - {name: structural, weight: 0.38, components: {skin_panel: 1, frame_section: 1}}
+  - {name: cabin_systems, weight: 0.20, components: {battery: 2, lighting_unit: 3, seat_assembly: 1}}
+  - {name: doors_surfaces, weight: 0.18, components: {door_assembly: 1, flight_surface: 1}}
+  - {name: engine_propulsion, weight: 0.05, components: {turbine_blade: 4, bearing: 6}}
+  - {name: avionics, weight: 0.19, components: {nav_unit: 1, comm_radio: 1, display: 2}}
+
+# Midpoint of serviceable value ranges (ILS, PartBase, HEICO)
+prices:
+  skin_panel: 3500
+  frame_section: 5500
+  battery: 1400
+  lighting_unit: 350
+  seat_assembly: 2750
+  door_assembly: 10000
+  flight_surface: 14000
+  turbine_blade: 4000
+  bearing: 800
+  nav_unit: 16500
+  comm_radio: 5500
+  display: 3500
+
+# Weighted from FAA SDR condition distribution → recovery probability
+# Overall: 0.556 (see calibration doc)
+base_yields:
+  skin_panel: 0.56
+  frame_section: 0.56
+  battery: 0.56
+  lighting_unit: 0.56
+  seat_assembly: 0.56
+  door_assembly: 0.56
+  flight_surface: 0.56
+  turbine_blade: 0.56
+  bearing: 0.56
+  nav_unit: 0.56
+  comm_radio: 0.56
+  display: 0.56
+
+# FAA Part 145 shop rates ($85-150/hr)
+inspection_costs:
+  skip: {cost: 0, time_min: 0}
+  l1: {cost: 50, time_min: 20}
+  l2: {cost: 100, time_min: 35}
+
+processing_costs:
+  l2: {cost: 600, time_min: 150}
+  l1: {cost: 100, time_min: 30}
+  scrap: {cost: 0, time_min: 10}
+
+# 20 mechanics * 8hr * 5 days = 800 hr/week
+capacity:
+  weekly_hours: 800
+
+thresholds:
+  tau_h: 0.50
+  tau_l: 0.25
+
+kappa_base: 10
+gamma: 1.0

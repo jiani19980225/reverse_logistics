@@ -1,0 +1,6 @@
+# Ablation: remove both phi AND adaptive inspection
+# This is IDENTICAL to the opt-only baseline (same code path)
+override:
+  extractor: "null"
+  use_adaptive_inspection: false
+  description: "No S2S, no adaptive inspection = opt-only baseline"
