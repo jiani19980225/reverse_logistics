@@ -21,7 +21,7 @@ from src.s2s.baselines.runner import run_baseline
 OUT_DIR = Path(__file__).parent.parent / "outputs"
 OUT_DIR.mkdir(exist_ok=True)
 
-SEEDS = [0, 1, 2, 3, 4]
+SEEDS = list(range(30))  # paper reports 30 seeds
 LEVELS = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
 SCENARIOS = [
     ("configs/s1_it.yaml", "s1", "S1: IT Infrastructure"),

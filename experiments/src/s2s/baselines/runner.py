@@ -63,9 +63,9 @@ class StructuredOnlyExtractor(AbstractExtractor):
         return ExtractionResult(phi=float(np.clip(phi, 0.01, 1.0)), sigma=0.99)
 
 
-class LLMOnlyExtractor(AbstractExtractor):
-    """Baseline 5: LLM-only (CoT). Uses phi from keyword extractor but
-    ignores optimizer — disposition is threshold-based on phi alone."""
+class SemanticThresholdExtractor(AbstractExtractor):
+    """Baseline 5 (semantic-only): uses keyword phi but threshold routing only,
+    no optimizer. Renamed from LLMOnlyExtractor — there is no LLM in this repo."""
     def __init__(self, inner: AbstractExtractor):
         self._inner = inner
 
@@ -84,7 +84,7 @@ def run_baseline(
     """Run a named baseline through the standard pipeline.
 
     Args:
-        baseline: one of "random", "rule_based", "xgboost", "opt_only", "llm_only", "ours"
+        baseline: one of "random", "rule_based", "xgboost", "opt_only", "semantic_only", "ours"
         config: scenario config
         keyword_extractor: the scenario's KeywordExtractor instance
         seed: master RNG seed

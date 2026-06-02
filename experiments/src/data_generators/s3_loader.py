@@ -1,8 +1,9 @@
-"""S3 Loader — Consumer Electronics asset generation.
+"""S3 Loader — Consumer Electronics asset generation (SYNTHETIC data only).
 
-In production: parses CPSC SaferProducts.gov + Amazon Reviews.
-For simulation: generates synthetic consumer return descriptions
-calibrated to CPSC remedy distributions.
+All assets and review texts generated here are synthetic. Parameters (return
+condition distribution, yield ranges, refurb values) are calibrated from
+CPSC remedy data and Amazon review phrasing, but no real records are used
+as simulation inputs.
 
 DECOUPLED GENERATION (PROBLEM 1 fix, extended to S3): true_yield is drawn from
 the ground-truth condition; the review text is generated from an independently

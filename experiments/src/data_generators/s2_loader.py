@@ -1,8 +1,9 @@
-"""S2 Loader — Aviation MRO asset generation.
+"""S2 Loader — Aviation MRO asset generation (SYNTHETIC data only).
 
-In production: parses real FAA SDR CSV (191K records).
-For simulation: generates synthetic SDR-style records calibrated to
-the real SDR condition distribution (corroded 20%, cracked 17%, etc.).
+All assets and notes generated here are synthetic. Parameters (condition
+distribution, yield ranges) are calibrated from the real FAA SDR database,
+but no real FAA records are used as simulation inputs. Vocabulary is drawn from
+ATA-coded SDR language to produce realistic-sounding maintenance notes.
 
 DECOUPLED GENERATION (PROBLEM 1 fix, extended to S2): true_yield is drawn from
 the ground-truth condition; the SDR note is generated from an independently

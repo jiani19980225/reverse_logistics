@@ -27,8 +27,8 @@ OUT_DIR = Path(__file__).parent.parent / "outputs"
 def main():
     parser = argparse.ArgumentParser(description="Run S2S experiment")
     parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("--seeds", default="0,1,2,3,4",
-                       help="Comma-separated seeds")
+    parser.add_argument("--seeds", default=",".join(str(i) for i in range(30)),
+                       help="Comma-separated seeds (default: 0-29)")
     parser.add_argument("--baseline", default=None,
                        help="Run single baseline (default: all)")
     parser.add_argument("--capacity-sweep", action="store_true",
