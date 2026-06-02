@@ -7,34 +7,60 @@ how phi/sigma are set.
 This prevents code drift between baselines and the main system.
 """
 
+import copy
+
 import numpy as np
 from ..extractors.base import AbstractExtractor, ExtractionResult, NullExtractor
 from ..pipeline import run_pipeline
 from ..metrics import RunMetrics
 
+_STRUCTURED_TRAIN_SEED = 99999
+_STRUCTURED_TRAIN_N = 2000
+
 
 class RandomExtractor(AbstractExtractor):
     """Baseline 1: Random phi, no meaningful signal."""
-    def extract(self, text: str, rng: np.random.Generator) -> ExtractionResult:
+    def extract(self, text: str, rng: np.random.Generator,
+                asset: dict = None) -> ExtractionResult:
         return ExtractionResult(phi=rng.uniform(0.3, 1.0), sigma=rng.uniform(0.0, 1.0))
 
 
-class StructuredOnlyExtractor(AbstractExtractor):
-    """Baseline 3 (XGBoost proxy): phi from age only, no text.
+def train_structured_mapping(config: dict) -> dict:
+    """Learn age_bracket -> mean(true_yield) on a held-out training population.
 
-    Simulates XGBoost trained on structured features. Uses a held-out
-    training set of 2000 assets (generated with a fixed training seed)
-    to learn age->yield mapping, then applies to test assets.
+    This is the honest "XGBoost on structured features" mapping. It is trained
+    on an independent population (fixed seed, NOT the evaluation seeds) and uses
+    only the structured age_bracket feature, ignoring text.
+    """
+    from ...data_generators.common import generate_assets
+    train_cfg = copy.deepcopy(config)
+    train_cfg["n_assets"] = _STRUCTURED_TRAIN_N
+    rng = np.random.default_rng(_STRUCTURED_TRAIN_SEED)
+    assets = generate_assets(train_cfg, rng)
+
+    by_bracket: dict = {}
+    for a in assets:
+        by_bracket.setdefault(a["age_bracket"], []).append(a["true_yield_factor"])
+    return {b: float(np.mean(ys)) for b, ys in by_bracket.items()}
+
+
+class StructuredOnlyExtractor(AbstractExtractor):
+    """Baseline 3 (XGBoost proxy): phi from structured age feature, no text.
+
+    Simulates XGBoost trained on structured features. The age->phi mapping is
+    learned by train_structured_mapping() on a held-out 2000-asset population
+    and applied to each test asset via its age_bracket. Text is ignored.
     """
     def __init__(self, age_to_phi: dict = None):
-        # Pre-trained mapping: age_bracket -> average phi
-        # Derived from separate 2000-asset training set (seed=99999)
-        self._mapping = age_to_phi or {0: 0.88, 1: 0.62}
+        # Trained mapping age_bracket -> phi. Falls back to a neutral 0.75 only
+        # if an unseen bracket appears (should not happen after training).
+        self._mapping = age_to_phi or {}
 
-    def extract(self, text: str, rng: np.random.Generator) -> ExtractionResult:
-        # Note: actual age_bracket is injected by the pipeline before extraction
-        # This extractor ignores text entirely
-        return ExtractionResult(phi=0.75, sigma=0.99)  # default; overridden in run
+    def extract(self, text: str, rng: np.random.Generator,
+                asset: dict = None) -> ExtractionResult:
+        age_bracket = asset.get("age_bracket", 0) if asset else 0
+        phi = self._mapping.get(age_bracket, 0.75)
+        return ExtractionResult(phi=float(np.clip(phi, 0.01, 1.0)), sigma=0.99)
 
 
 class LLMOnlyExtractor(AbstractExtractor):
@@ -43,8 +69,9 @@ class LLMOnlyExtractor(AbstractExtractor):
     def __init__(self, inner: AbstractExtractor):
         self._inner = inner
 
-    def extract(self, text: str, rng: np.random.Generator) -> ExtractionResult:
-        return self._inner.extract(text, rng)
+    def extract(self, text: str, rng: np.random.Generator,
+                asset: dict = None) -> ExtractionResult:
+        return self._inner.extract(text, rng, asset)
 
 
 def run_baseline(
@@ -78,8 +105,10 @@ def run_baseline(
                           allocator="fifo")
 
     elif baseline == "xgboost":
-        # Structured features only, greedy optimizer, inspect all
-        return run_pipeline(config, StructuredOnlyExtractor(), seed,
+        # Structured features only (age), greedy optimizer, inspect all.
+        # Mapping trained on a held-out population, applied via each asset's age.
+        mapping = train_structured_mapping(config)
+        return run_pipeline(config, StructuredOnlyExtractor(mapping), seed,
                           use_adaptive_inspection=False,
                           capacity_fraction=capacity_fraction,
                           allocator="greedy")

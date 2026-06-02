@@ -4,6 +4,8 @@ This is the ONLY entry point for running experiments. Baselines are
 selected by swapping extractor and policy, not by separate code paths.
 """
 
+from __future__ import annotations  # allow PEP 604 (str | Path) on Python 3.9
+
 import numpy as np
 import yaml
 from pathlib import Path
@@ -58,9 +60,9 @@ def run_pipeline(
     else:
         assets = asset_generator(config, gen_rng)
 
-    # Extract phi, sigma for each asset
+    # Extract phi, sigma for each asset (asset passed for structured-feature extractors)
     for a in assets:
-        result = extractor.extract(a["text"], extract_rng)
+        result = extractor.extract(a["text"], extract_rng, asset=a)
         a["phi"] = result.phi
         a["sigma"] = result.sigma
 

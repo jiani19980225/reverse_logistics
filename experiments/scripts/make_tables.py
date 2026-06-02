@@ -21,13 +21,15 @@ from src.s2s.baselines.runner import run_baseline
 OUT_DIR = Path(__file__).parent.parent / "outputs"
 OUT_DIR.mkdir(exist_ok=True)
 
-SEEDS = [0, 1, 2, 3, 4]
+SEEDS = list(range(30))  # paper reports 30 seeds
 SCENARIOS = [
     ("configs/s1_it.yaml", "s1"),
     ("configs/s2_aviation.yaml", "s2"),
     ("configs/s3_consumer.yaml", "s3"),
 ]
-BASELINES = ["random", "rule_based", "xgboost", "opt_only", "llm_only", "ours"]
+# "semantic_only" is the implemented baseline name (run_baseline); "llm_only"
+# was a stale label that does not exist and raised ValueError.
+BASELINES = ["random", "rule_based", "xgboost", "opt_only", "semantic_only", "ours"]
 
 
 def make_table5():

@@ -107,6 +107,29 @@ class TestPipeline:
         assert r_opt.ICS == r_abl.ICS
 
 
+class TestSeedControl:
+    """Locks the seed guarantees that make paired Wilcoxon valid (PROBLEM 4)."""
+
+    def _population(self, cfg, seed):
+        from src.data_generators.common import generate_assets
+        master = np.random.default_rng(seed)
+        gen_rng = np.random.default_rng(master.integers(0, 2**31))
+        assets = generate_assets(cfg, gen_rng)
+        return [(a["asset_type"], round(a["true_yield_factor"], 9), a["text"]) for a in assets]
+
+    def test_same_seed_shared_population(self, s1_config):
+        """Same seed -> identical population (every method sees the same assets)."""
+        assert self._population(s1_config, 7) == self._population(s1_config, 7)
+
+    def test_different_seeds_independent_population(self, s1_config):
+        """Different seeds -> genuinely different populations, not a reshuffle."""
+        p0 = self._population(s1_config, 0)
+        p1 = self._population(s1_config, 1)
+        assert p0 != p1
+        # sorted true_yields differ -> not the same population re-ordered
+        assert sorted(t[1] for t in p0) != sorted(t[1] for t in p1)
+
+
 class TestKeywordExtractor:
     def test_negative_signals_low_phi(self):
         ext = KeywordExtractor("s1")

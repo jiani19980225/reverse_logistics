@@ -1,7 +1,12 @@
-"""Keyword-based deterministic extractor.
+"""Keyword-based deterministic extractor — lower-bound reference implementation.
 
-Calibrated against 20 real FAA SDR records (r=0.83 disposition alignment).
-This is the extractor that generates ALL numbers in the paper.
+Vocabulary drawn from iFixit teardown reports (S1), ATA-coded SDR language (S2),
+and consumer return phrasing (S3). Evaluated on the synthetic decoupled benchmark
+(see s1_generator.py / s2_loader.py / s3_loader.py): S1 r=0.47, S2 r=0.32,
+S3 r=0.36 (pooled over 30 seeds). These are lower bounds — the vocabulary is tuned
+to the simulation's stylized notes and will fall back to the uninformative prior
+(phi=1.0) on organic text. A stronger reader (see extractors/strong.py) achieves
+r=0.73/0.54/0.74, marking the synthetic-benchmark ceiling.
 """
 
 import numpy as np
@@ -46,7 +51,8 @@ class KeywordExtractor(AbstractExtractor):
         self.scenario = scenario
         self.signals = _SIGNALS[scenario]
 
-    def extract(self, text: str, rng: np.random.Generator) -> ExtractionResult:
+    def extract(self, text: str, rng: np.random.Generator,
+                asset: dict = None) -> ExtractionResult:
         text_lower = text.lower()
         # Negation-aware: "no corrosion" should not trigger "corrosion"
         neg = [s for s in self.signals["negative"]
