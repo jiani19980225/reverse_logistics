@@ -1,728 +1,639 @@
+%----------------------------------------------------------------------
+% IEEE Access — Semantic Signal-Assisted Decision Support for Reverse
+% Logistics Resource Recovery Under Uncertainty
+%----------------------------------------------------------------------
 \documentclass[journal]{IEEEtran}
+
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
 \usepackage{booktabs}
-\usepackage{xcolor}
+\usepackage{enumitem}
 \usepackage{url}
 \usepackage{hyperref}
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
 
 \begin{document}
 
-\title{Semantic Signal-Assisted Decision Support for\\Reverse Logistics Resource Recovery Under Uncertainty}
+\title{Semantic Signal-Assisted Decision Support for\\
+       Reverse Logistics Resource Recovery Under Uncertainty}
 
-\author{[Author 1], \textit{Amazon}, Seattle, WA, USA \and [Author 2], [Affiliation], [City, Country]}
+\author{[Author~1],~\IEEEmembership{Member,~IEEE,}
+        \textit{Amazon}, Seattle, WA, USA
+        and
+        [Author~2], [Affiliation], [City, Country]%
+\thanks{Manuscript received \today.}}
+
+\markboth{IEEE ACCESS}%
+{Author \MakeLowercase{\textit{et al.}}: Semantic Signal-Assisted Decision Support}
 
 \maketitle
 
-%---------------------------------------------------------------------------
+%----------------------------------------------------------------------
 \begin{abstract}
-Disposition decisions in reverse logistics pipelines must be made under real
-uncertainty about product condition. Whether to refurbish, harvest components,
-recycle, or scrap a returned asset typically gets resolved through physical
-inspection alone, at \$50--200 per unit and 30--60 technician-minutes. At
-volume that cost becomes the binding constraint.
+Reverse logistics disposition decisions (refurbish, harvest components, recycle,
+or scrap) must be made under substantial uncertainty about product condition.
+Physical inspection resolves this uncertainty but costs \$50--200 per unit and
+30--60 technician-minutes, a bottleneck that becomes the binding constraint at
+volume.
 
-We describe a decision-support framework that converts the unstructured text
-already accompanying returns (technician notes, maintenance logs, customer
-descriptions) into informative priors for a stochastic disposition optimizer.
-A semantic interface decouples text extraction from decision optimization: any
-classifier satisfying the interface can plug in without touching the downstream
-engine. An adaptive inspection policy then uses extractor confidence to set
+We present a decision-support framework that converts the unstructured text
+already accompanying returns---technician notes, maintenance logs, customer
+descriptions---into informative priors for a stochastic disposition optimizer.
+A modular semantic interface decouples text extraction from decision optimization:
+any classifier satisfying the interface can be substituted without modifying the
+downstream engine. An adaptive inspection policy uses extractor confidence to set
 inspection depth per asset, skipping physical testing where text evidence is
-strong and falling back to full component-level inspection when it is not.
+strong and falling back to full component-level testing where it is not.
 
-We validate across three structurally distinct scenarios (enterprise IT
-decommission, aviation MRO, consumer electronics returns) using a conservative
-keyword extractor as a lower bound on extraction quality. The full framework
-(text extraction + adaptive inspection + greedy optimizer) beats the
-optimization-only inspect-all baseline (Opt-only) in all three scenarios
-(TRV lift 2.9--13.7\% vs.\ Opt-only, paired Wilcoxon $p<0.001$, 30~seeds)
-while saving \$628--\$23,688 per batch in inspection cost. In S1, the adaptive
-inspection policy alone (without the full optimizer) already exceeds Opt-only
-by 3.3\%, so both components contribute independently. In S2, a structured-age
-baseline with full inspection outperforms the framework on absolute TRV because
-the text signal is too weak to cover the inspection cost reduction; this is an
-expected result given the weak keyword calibration ($r=0.32$) in that domain.
+We validate across three structurally distinct scenarios---enterprise IT
+decommission, aviation MRO, and consumer electronics returns---using a
+conservative keyword extractor as a lower bound on extraction quality.
+The complete framework (text extraction + adaptive inspection + greedy optimizer)
+beats the optimization-only inspect-all baseline (Opt-only) in all three
+scenarios (TRV lift 2.9--13.7\% vs.\ Opt-only, paired Wilcoxon $p{<}0.001$,
+30~seeds) while saving \$628--\$23,688 per batch in inspection cost.
+In S1, the adaptive inspection policy alone already beats Opt-only by 3.3\%,
+before the optimizer is added; in S2, a structured-feature baseline with full
+inspection outperforms the framework on absolute TRV because the keyword signal
+is too weak to compensate for reduced inspection coverage.
 
-Keyword-extractor calibration on the decoupled synthetic benchmark gives
-Pearson $r=0.47$ for descriptive IT notes, $r=0.32$ for standardized aviation
-codes, and $r=0.36$ for colloquial consumer text. A deterministic phrase-matching
-reader with complete note-vocabulary coverage reaches $r=0.73$, $r=0.54$, and
-$r=0.74$ on the same benchmark, bounding what any classifier reading the same
-noisy notes could achieve without seeing ground-truth condition labels. All
-results reproduce from the released Reverse Logistics Decision Benchmark (RLDB).
+Keyword-extractor calibration on the decoupled synthetic benchmark gives Pearson
+$r{=}0.47$ (IT notes), $r{=}0.32$ (aviation codes), and $r{=}0.36$ (consumer
+reviews). A full-vocabulary phrase matcher on the same benchmark reaches
+$r{=}0.73$, $r{=}0.54$, and $r{=}0.74$, establishing the note-reading ceiling
+for each text type. All results reproduce from the released Reverse Logistics
+Decision Benchmark (RLDB).
 \end{abstract}
 
 \begin{IEEEkeywords}
-reverse logistics, semantic signal extraction, resource recovery, adaptive
-inspection, circular economy, stochastic optimization, decision support
+reverse logistics, semantic signal extraction, resource recovery,
+adaptive inspection, circular economy, stochastic optimization, decision support
 \end{IEEEkeywords}
 
-%---------------------------------------------------------------------------
-\section{Introduction}
-\label{sec:intro}
+%----------------------------------------------------------------------
+\section{Introduction}\label{sec:intro}
 
-Resource recovery through reverse logistics is a growing operational problem.
-The global IT asset disposition market reached \$11.4B in~2023~\cite{GlobalMktInsights},
-yet disposition accuracy remains low: returned products land in suboptimal
-recovery paths because condition assessment depends on physical inspection that
-does not scale with volume. Aviation MRO faces the same pressure, with annual
-market demand exceeding \$80B~\cite{OliverWyman}; even modest reductions in
-unnecessary inspection have material cost impact. Consumer electronics returns
+Resource recovery through reverse logistics is a large and growing operational
+challenge. The global IT asset disposition market reached \$11.4B in
+2023~\cite{GlobalMktInsights}, yet returned products are routinely routed to
+suboptimal paths because condition assessment depends on physical inspection that
+does not scale with volume. Aviation MRO faces the same pressure (annual market
+demand exceeds \$80B~\cite{OliverWyman}), and consumer electronics returns now
 exceed 3.6 billion units annually~\cite{NRF}, most processed with no
-condition-based routing at all.
+condition-based routing.
 
-The underlying problem is an information gap. Decision-makers must choose among
-recovery options with little knowledge of actual product condition. Physical
-inspection closes that gap but is expensive and slow. The textual data that
-already accompanies most returns (technician notes, maintenance logs,
-customer-reported symptoms) often contains condition-relevant signals, yet
-existing optimization frameworks cannot use them: they require structured
-numerical inputs prepared before optimization begins~\cite{Godichaud2022,Govindan2015}.
+The core problem is an information gap. Decision-makers must choose among
+recovery options---refurbish, harvest components, recycle, or scrap---with little
+knowledge of actual condition. Physical inspection closes that gap but is
+expensive and slow. The textual data already accompanying most returns (technician
+notes, maintenance logs, customer-reported symptoms) often contains
+condition-relevant signals, yet existing optimization frameworks require
+structured numerical inputs and cannot use
+them~\cite{Godichaud2022,Govindan2015}.
 
 This paper formalizes the integration of semantic signals from unstructured text
-into stochastic disposition optimization. The core idea is simple: text,
-extracted and calibrated, acts as a noisy but useful prior on product condition.
-That prior parameterizes Beta-distributed yield models the decision engine uses
-to rank and allocate assets under capacity constraints.
+into stochastic disposition optimization. The key insight is that text, when
+extracted and calibrated, acts as a noisy but informative prior on product
+condition. That prior parameterizes Beta-distributed yield models the decision
+engine uses to rank and allocate assets under capacity constraints.
 
-\smallskip
-\noindent\textbf{Validation.}
-We evaluate across three scenarios chosen to differ structurally:
+\smallskip\noindent\textbf{Validation overview.}
+Three scenarios, chosen to differ structurally in text type, regulatory
+environment, and economic scale:
 
-\begin{itemize}
-\item \textbf{S1 (IT Infrastructure):} Planned decommissions with descriptive
-technician notes ($r=0.47$; phrase-matching ceiling $r=0.73$). The combined
-framework lifts TRV 13.7\% over Opt-only, and the adaptive inspection policy
-alone (without the full optimizer) adds 3.3\% -- so both components contribute
-value independently.
+\begin{itemize}[leftmargin=*,noitemsep]
+\item \textbf{S1 (IT Infrastructure):} Planned decommissions, descriptive
+  technician notes. Keyword calibration $r{=}0.47$; full-vocabulary ceiling
+  $r{=}0.73$. The combined framework lifts TRV 13.7\% over Opt-only.
+  The adaptive inspection policy alone (without the optimizer) contributes 3.3\%
+  independently.
 
-\item \textbf{S2 (Aviation MRO):} Safety-critical domain, FAA Part~145
-inspection mandates, standardized codes ($r=0.32$). Text + inspection policy
-alone \emph{hurts} TRV in S2 (threshold routing without optimization destroys
-\$188K vs.\ Opt-only); the optimizer recovers \$233K of that, leaving a net
-+2.9\% lift over Opt-only. A structured-feature baseline with full inspection
-outperforms on absolute TRV, showing that when the text signal is this weak,
-inspection savings cannot compensate for coverage reduction.
+\item \textbf{S2 (Aviation MRO):} FAA Part~145 mandates, standardized
+  maintenance codes, $r{=}0.32$. Text + adaptive inspection without the optimizer
+  destroys \$188K vs.\ Opt-only; the optimizer recovers \$233K, leaving a net
+  $+$2.9\% lift. A structured-feature baseline with full inspection outperforms on
+  absolute TRV because the text signal is insufficient to cover the cost of
+  reduced inspection coverage.
 
-\item \textbf{S3 (Consumer Electronics):} High-volume returns where per-unit
-inspection is rarely economic ($r=0.36$). Ours achieves +4.5\% TRV over
-Opt-only at slightly lower demand coverage (93.8\% vs.\ 96.0\%), because the
-text signal correctly identifies marginal assets as unprofitable and scraps them
-rather than processing them at a loss.
+\item \textbf{S3 (Consumer Electronics):} High-volume returns, $r{=}0.36$. The
+  framework achieves $+$4.5\% TRV over Opt-only at slightly lower demand coverage
+  (93.8\% vs.\ 96.0\%), because the optimizer correctly scraps marginal assets
+  that Opt-only over-processes.
 \end{itemize}
 
-\smallskip
-\noindent\textbf{Contributions.}
-\begin{enumerate}
-\item A framework for integrating semantic signals from unstructured text into
-stochastic reverse logistics disposition models, with a clean separation between
-extraction and optimization.
-\item An adaptive inspection policy that sets inspection depth per asset from
-extractor confidence. In high-signal settings (S1), the policy alone adds
-measurable TRV over the inspect-all baseline. In weak-signal settings (S2, S3),
-it requires the optimizer to capture net positive value.
-\item A three-scenario simulation study with explicit bounds on extraction
-quality, establishing where text signals add value, where they are advisory,
-and where they enable volume triage. Code and benchmark are released.
+\smallskip\noindent\textbf{Contributions:}
+\begin{enumerate}[noitemsep]
+\item A framework for integrating semantic text signals into stochastic reverse
+  logistics disposition models, with clean separation between extraction and
+  optimization.
+\item An adaptive inspection policy that sets inspection depth from extractor
+  confidence---effective as a standalone component in high-signal domains,
+  and requiring the optimizer in low-signal domains.
+\item A three-scenario simulation study with explicit calibration bounds
+  (conservative keyword vs.\ full-vocabulary ceiling), establishing where text
+  signals add value, where they are advisory, and where they enable volume triage.
+  Code and benchmark are fully released.
 \end{enumerate}
 
-%---------------------------------------------------------------------------
+%----------------------------------------------------------------------
 \section{Background and Related Work}
 
-\subsection{Reverse Logistics Decision Challenges}
-
-Reverse logistics decisions are sequential and partially irreversible. Classical
-planning approaches include mixed-integer programming for disassembly lot-sizing
-under lead time uncertainty~\cite{Godichaud2022} and stochastic programming for
-closed-loop network design~\cite{Govindan2015}. These methods assume structured
-numerical inputs. In practice, much of the decision-relevant information lives
-in unstructured sources that no existing framework can read without manual
+Reverse logistics decisions are sequential and partially irreversible.
+Mixed-integer programming for disassembly lot-sizing~\cite{Godichaud2022} and
+stochastic programming for closed-loop network design~\cite{Govindan2015} are
+the classical approaches, but both require structured numerical inputs specified
+before optimization. In practice, much decision-relevant information lives in
+unstructured narratives that no existing framework can ingest without manual
 translation.
 
-\subsection{Text-Based Condition Assessment}
+Text-based methods have advanced in forward supply chain settings.
+OptiGuide~\cite{Yang2023} translates natural language into optimization code;
+InvAgent~\cite{Quan2024} coordinates multi-agent inventory decisions;
+AlMahri et al.~\cite{AlMahri2024} extract supply chain relationships via
+zero-shot learning. None addresses reverse logistics disposition under yield
+uncertainty. Table~\ref{tab:positioning} shows the gap this work fills.
 
-Language models have been applied to forward supply chain tasks: OptiGuide~\cite{Yang2023}
-generates optimization code from natural language; InvAgent~\cite{Quan2024}
-coordinates multi-agent inventory decisions; AlMahri et al.~\cite{AlMahri2024}
-extract supply chain relationships with zero-shot learning. None of this work
-addresses reverse logistics disposition under yield uncertainty. Table~\ref{tab:positioning}
-shows where this work sits.
-
-\begin{table}[t]
+\begin{table}[!t]
 \caption{Positioning Relative to Existing Approaches}
 \label{tab:positioning}
-\centering
+\centering\small
 \begin{tabular}{lcccc}
 \toprule
-Approach & Struct. & Unstruct. & Yield & Adapt. \\
+Approach & Struct.\ & Unstruct.\ & Yield & Adapt. \\
          & Input   & Text      & Uncert. & Insp. \\
 \midrule
 MIP/Stochastic \cite{Godichaud2022,Govindan2015} & \checkmark & -- & \checkmark & -- \\
 ML Prediction \cite{Li2023,Zhang2022} & \checkmark & -- & Impl. & -- \\
-LLM for SC \cite{Yang2023,Quan2024} & \checkmark & \checkmark & -- & -- \\
-Rule-based \cite{Thierry1995} & \checkmark & -- & -- & -- \\
-This work & \checkmark & \checkmark & \checkmark & \checkmark \\
+LLM for SC \cite{Yang2023,Quan2024}   & \checkmark & \checkmark & -- & -- \\
+Rule-based \cite{Thierry1995}          & \checkmark & -- & -- & -- \\
+\textbf{This work}                     & \checkmark & \checkmark & \checkmark & \checkmark \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-%---------------------------------------------------------------------------
+%----------------------------------------------------------------------
 \section{Framework Design}
 
 \subsection{Problem Setting}
 
-Assets arrive in periodic batches for disposition. Each asset $m$ has structured
-attributes (type, age, source site, BOM structure) and unstructured context
-(inspection notes $\mathcal{T}(m)$, site history $H(s(m))$, active business
-directives). The BOM is a three-level hierarchy: $L_0$ (whole unit), $L_1$
-(major assemblies), $L_2$ (individual components). Moving from $L_1$ to $L_2$
-costs 3--5$\times$ more than $L_0$ to $L_1$ because socketed component
-extraction requires precision tooling.
-
-Per asset, two decisions are made: $D_0$ (triage: accept for processing or scrap
-as-is) and $D_2$ (disposition: disassembly depth and component allocation).
-The expected recovery value at disassembly level $l$ is:
+Assets arrive in periodic batches. Each asset $m$ has structured attributes
+(type, age, BOM structure) and unstructured context (inspection notes
+$\mathcal{T}(m)$, site history $H(s(m))$). The BOM has three levels: $L_0$
+(whole unit), $L_1$ (major assemblies), $L_2$ (components); moving from $L_1$
+to $L_2$ costs 3--5$\times$ more due to precision tooling requirements.
+Per asset, the system makes two decisions: $D_0$ (triage: accept or scrap) and
+$D_2$ (disposition: disassembly depth and allocation). Expected recovery value at
+level $l$ is:
 \begin{equation}
-V(m, l) = \sum_{c \in \mathrm{BOM}(m,l)} p_c \cdot \mathbb{E}[Y_c(m)] - C_l
+V(m,l) = \sum_{c\in\text{BOM}(m,l)} p_c\cdot\mathbb{E}[Y_c(m)] - C_l
 \label{eq:value}
 \end{equation}
-where $p_c$ is the component market price, $C_l$ is the disassembly cost to
-level $l$, and $Y_c(m) \sim \mathrm{Beta}(\alpha_c, \beta_c)$ is the stochastic
-component yield.
+where $p_c$ is component market price, $C_l$ is disassembly cost to level $l$,
+and $Y_c(m)\sim\text{Beta}(\alpha_c,\beta_c)$ is stochastic component yield.
 
 \subsection{System Architecture}
 
-The framework has two layers. The \emph{Semantic Extraction Layer} converts
-unstructured text into a context factor $\phi \in (0,1]$ and a confidence score
-$\sigma \in [0,1]$. The \emph{Recovery Decision Engine} evaluates
-Eq.~(\ref{eq:value}) at each feasible disassembly level via Monte Carlo
-sampling ($N=1000$ draws), ranks assets by expected net value, and allocates
-greedily to demand streams under capacity constraints.
+The framework has two layers (Fig.~\ref{fig:arch}). The \emph{Semantic Extraction
+Layer} maps unstructured text to a context factor $\phi\in(0,1]$ and confidence
+score $\sigma\in[0,1]$. The \emph{Recovery Decision Engine} evaluates
+Eq.~(\ref{eq:value}) via $N{=}1000$ Monte Carlo draws, ranks assets by expected
+net value, and allocates greedily under capacity constraints.
 
-\begin{figure}[t]
+\begin{figure}[!t]
 \centering
-\fbox{\parbox{0.9\columnwidth}{\centering\small
-\textbf{Extraction Layer} \\[2pt]
-Unstructured text $\longrightarrow$ $\{\phi, \sigma\}$ \\[6pt]
-$\downarrow$ \\[6pt]
-\textbf{Adaptive Inspection Policy} ($\sigma$ vs $\tau_h, \tau_l$) \\[6pt]
-$\downarrow$ \\[6pt]
-\textbf{Recovery Decision Engine} (greedy + MC) \\[6pt]
-$\downarrow$ \\[6pt]
+\fbox{\parbox{0.88\columnwidth}{\centering\small
+\textbf{Semantic Extraction Layer}\\[2pt]
+Text $\longrightarrow$ $\{\phi,\,\sigma\}$\\[5pt]
+$\downarrow$\\[5pt]
+\textbf{Adaptive Inspection Policy}~~($\sigma$ vs.\ $\tau_h,\tau_l$)\\[5pt]
+$\downarrow$\\[5pt]
+\textbf{Recovery Decision Engine}~~(greedy + MC)\\[5pt]
+$\downarrow$\\[5pt]
 Disposition + rationale
 }}
-\caption{Two-layer framework. Extraction maps text to $\phi$ (condition factor)
-and $\sigma$ (confidence). The adaptive policy sets inspection depth from
-$\sigma$. The decision engine optimizes disposition under capacity constraints
-using the adjusted yield prior.}
+\caption{Two-layer framework architecture. The extraction layer maps text to
+context factor $\phi$ and confidence $\sigma$. The adaptive policy sets
+inspection depth from $\sigma$. The decision engine optimizes disposition under
+capacity constraints using the $\phi$-adjusted yield prior.}
 \label{fig:arch}
 \end{figure}
 
 \subsection{Context Extraction Layer}
 
-The framework defines a semantic interface that decouples text extraction from
-decision optimization. Any extractor returning $\phi \in (0,1]$ and
-$\sigma \in [0,1]$ can substitute without modifying the inspection policy or
-decision engine. The interface is the contribution; the specific extraction
-mechanism is a plug-in.
+The framework defines a semantic interface: any extractor returning
+$\phi\in(0,1]$ and $\sigma\in[0,1]$ plugs in without changing the inspection
+policy or decision engine. The interface is the architectural contribution;
+the extraction mechanism is modular.
 
-\smallskip
-\noindent\textbf{Experimental extractor.}
-We use a deterministic keyword-and-pattern classifier with vocabularies drawn
+\smallskip\noindent\textbf{Experimental extractor.}
+For full reproducibility and to isolate policy gains from extraction quality,
+we use a deterministic keyword-and-pattern classifier with vocabularies drawn
 from iFixit teardown reports (S1), ATA-coded SDR language (S2), and consumer
-return phrasing (S3). The classifier is conservative by design: it falls back
-to the uninformative prior ($\phi=1.0$) on any note for which no vocabulary
-signal fires. Calibration on the decoupled synthetic benchmark
-(Section~\ref{sec:calibration}) gives $r=0.47$ on S1, $r=0.32$ on S2, and
-$r=0.36$ on S3.
+return phrasing (S3). When no vocabulary signal fires, the classifier falls back
+to $\phi{=}1.0$ (uninformative prior), triggering full inspection. This is a
+deliberate lower bound.
 
-\smallskip
-\noindent\textbf{Full-vocabulary reference extractor.}
-To bound what better extraction could achieve on the same benchmark, we
-implement a second deterministic phrase matcher (see Table~\ref{tab:calibration})
-that covers the complete condition vocabulary for each scenario and maps the
-described condition to a recoverability estimate via a table fixed before
-extraction. It reads the same noisy, decoupled note as the keyword classifier
-and cannot see the ground-truth condition. Neither extractor is an oracle. The
-reason both stay below $r=1.0$ is that the note itself is a lossy signal: the
-imposed generation noise ($p_\text{omit}=0.15$, $p_\text{mislabel}=0.25$) sets
-a ceiling that no phrase-matching classifier reading only the note can exceed.
-
-\smallskip
-\noindent\textbf{Extractor choice rationale.}
-We pick a keyword classifier for three reasons: (1)~full reproducibility without
-API or model-versioning constraints; (2)~performance gains trace to the adaptive
-policy rather than extraction quality; and (3)~the classifier's known failure
-modes (it cannot parse negation, implicit context, or domain abbreviations)
-stress-test the policy's tolerance for noisy inputs. Any capable extractor
-satisfying the interface would improve calibration; the architecture requires
-no change.
+\smallskip\noindent\textbf{Full-vocabulary reference extractor.}
+A second deterministic phrase matcher covers the complete condition vocabulary
+per scenario and maps the described condition to a recoverability estimate via a
+table fixed before extraction (Table~\ref{tab:calibration}). It reads the same
+noisy, decoupled note as the keyword classifier and cannot see the ground-truth
+condition label. Neither extractor is an oracle; both are bounded by the
+note generation noise ($p_\text{omit}{=}0.15$, $p_\text{mislabel}{=}0.25$),
+which limits $r$ to below 1.0 for any note-reading classifier.
 
 The context factor $\phi(m)$ adjusts baseline yield downward when negative
-signals are present. Positive signals do not push yield above baseline
-($\phi \leq 1.0$). Multiple negative signals combine multiplicatively. On
-extraction failure the mechanism defaults to $\phi=1.0$, which triggers full
-inspection via the adaptive policy.
+signals are present; positive signals cannot push $\phi$ above 1.0. Multiple
+negative signals combine multiplicatively.
 
-\subsection{Prior-Adjustment Mechanism}
-\label{sec:framework-prior}
+\subsection{Prior-Adjustment Mechanism}\label{sec:prior}
 
-Given $\phi$ and baseline yield $\hat{y}_c$ for component $c$, the Beta prior
-is adjusted by moment matching:
+Given $\phi$ and component baseline yield $\hat{y}_c$, the Beta prior is
+shifted by moment matching:
 \begin{equation}
-\alpha'_c = \phi(m) \cdot \hat{y}_c \cdot \kappa, \quad
-\beta'_c  = (1 - \phi(m) \cdot \hat{y}_c) \cdot \kappa
+\alpha'_c = \phi(m)\cdot\hat{y}_c\cdot\kappa,\quad
+\beta'_c  = (1-\phi(m)\cdot\hat{y}_c)\cdot\kappa
 \label{eq:prior}
 \end{equation}
-where $\kappa$ controls the effective prior sample size. This is a deterministic
-shift of the prior mean toward the extractor's point estimate with strength
-proportional to source reliability. There is no likelihood function and no
-posterior computation; the mechanism is analogous to setting a pseudo-count
-that encodes text-derived belief.
+where $\kappa$ is the effective prior sample size. This is a deterministic
+pseudo-count encoding text-derived belief; there is no likelihood function or
+posterior computation.
 
-\smallskip
-\noindent\textbf{Choice of $\kappa$ and what it tells us.}
-We use $\kappa=10$ as a practical default. The key insight is that $\kappa$
-does not change \emph{which assets get processed}: it scales $\alpha'_c$ and
-$\beta'_c$ proportionally but leaves the Beta mean ($\phi \cdot \hat{y}_c$)
-invariant, and the decision engine ranks assets by that mean. Sweeping $\kappa
-\in \{5,10,20,40,60,80\}$ on S1 confirms this analytically (spread: 0.86
-percentage points, Table~\ref{tab:kappa}). This near-flatness is not a
-limitation; it reveals that the framework's economic value comes from
-\emph{inspection targeting}, not from how confidently the text signal
-concentrates the yield prior. Getting the right assets to the right inspection
-tier is the mechanism.
+\smallskip\noindent\textbf{Key insight on $\kappa$.}
+$\kappa$ scales $\alpha'_c$ and $\beta'_c$ but leaves the Beta mean
+$\phi\cdot\hat{y}_c$ invariant. Since the decision engine ranks assets by that
+MC mean, $\kappa$ does not change which assets get processed or how they are
+ranked. Sweeping $\kappa\in\{5,10,20,40,60,80\}$ on S1 confirms this:
+spread is 0.86 percentage points (Table~\ref{tab:kappa}). Framework value
+comes from \emph{inspection targeting}, not prior concentration. We use
+$\kappa{=}10$.
 
 \subsection{Adaptive Inspection Policy}
 
-Instead of uniform inspection across every asset, the system uses confidence
-$\sigma(m)$ to set inspection depth:
-\begin{itemize}
-\item $\sigma \geq \tau_h$: skip inspection, use $\phi$ directly;
-\item $\tau_l \leq \sigma < \tau_h$: quick functional test;
-\item $\sigma < \tau_l$: full component-level inspection.
+The system uses confidence $\sigma(m)$ to set inspection depth per asset:
+\begin{itemize}[noitemsep]
+\item $\sigma\geq\tau_h$: skip inspection, use $\phi$ directly;
+\item $\tau_l\leq\sigma<\tau_h$: quick functional test;
+\item $\sigma<\tau_l$: full component-level inspection.
 \end{itemize}
-$\tau_h=0.5$ and $\tau_l=0.25$ work well for high-value assets (S1, S2);
-S3 uses $\tau_l=0.45$ because colloquial text rarely produces high confidence.
-Each skipped inspection saves \$50--200 and 30--60 minutes. Each wrong skip is
-a recoverable error: the asset goes to scrap rather than a missed recovery,
-and the scrap penalty is bounded by the asset's realized value.
+S1/S2 use $\tau_h{=}0.5$, $\tau_l{=}0.25$ (aggressive skip); S3 uses
+$\tau_l{=}0.45$ because colloquial text rarely achieves high confidence.
+Each skipped inspection saves \$50--200 and 30--60 minutes per asset. Wrong skips
+are recoverable: the asset goes to scrap rather than a missed recovery, bounded
+by its realized value.
 
 \subsection{Decision Engine}
 
-The Recovery Decision Engine processes weekly batches (daily for S3). For each
-asset it evaluates $V(m,l)$ via Monte Carlo at each feasible disassembly level,
-ranks by expected net value, and allocates greedily subject to processing
-capacity. Under tight capacity, only the highest-value assets get processed;
-the rest are scrapped. This selective behavior emerges directly from the
-capacity constraint, requiring no explicit priority rules.
+The engine processes weekly batches (daily for S3). For each asset it evaluates
+$V(m,l)$ at each disassembly level via MC sampling, ranks by expected net value,
+and allocates greedily subject to processing capacity. Under tight capacity,
+only the highest-value assets are processed; selective harvesting behavior
+emerges directly from the capacity constraint without explicit priority rules.
 
-%---------------------------------------------------------------------------
+%----------------------------------------------------------------------
 \section{Cross-Industry Evaluation}
 
-\subsection{Scenario Design}
+\subsection{Scenarios, Data, and Baselines}
 
-Table~\ref{tab:scenarios} describes the three scenarios. They span planned
-enterprise decommission (product-type, weekly cadence), condition-driven MRO
-(service-type, regulated), and volume-driven consumer returns (product-type,
-daily cadence). The same framework architecture handles all three; only the
-extraction vocabulary and economic parameters change.
+Table~\ref{tab:scenarios} describes the three evaluation scenarios. All
+simulation data is \emph{synthetic}: asset attributes, technician notes, and
+yield draws are procedurally generated; public sources inform parameter
+calibration only (Table~\ref{tab:datasources}).
 
-\begin{table}[t]
+\begin{table}[!t]
 \caption{Evaluation Scenarios}
 \label{tab:scenarios}
-\centering
+\centering\small
 \begin{tabular}{lccc}
 \toprule
-& S1: IT Infra. & S2: Aviation & S3: Consumer \\
+ & S1: IT Infra. & S2: Aviation & S3: Consumer \\
 \midrule
-SC type & Product & Service & Product \\
-RL driver & Planned decom & Oper.\ degrad. & Returns \\
-Core uncert. & Comp.\ yield & Cond.\,+\,RUL & Prod.\ cond. \\
-Text type & Tech.\ jargon & Maint.\ codes & Nat.\ lang. \\
-Insp.\ cost & \$75, 60\,min & \$100, 35\,min & \$20, 5\,min \\
-Assets & 500/batch & 500/batch & 1000/batch \\
-Regulation & Minimal & FAA Pt.\ 145 & CPSC \\
+SC type        & Product       & Service        & Product     \\
+RL driver      & Planned decom & Oper.\ degrad. & Returns     \\
+Core uncert.   & Comp.\ yield  & Cond.\,+\,RUL  & Prod.\ cond.\\
+Text type      & Tech.\ jargon & Maint.\ codes  & Nat.\ lang. \\
+Insp.\ cost    & \$75, 60\,min & \$100, 35\,min & \$20, 5\,min\\
+Assets/batch   & 500           & 500            & 1,000       \\
+Regulation     & Minimal       & FAA Pt.\ 145   & CPSC        \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Data Sources and Generation}
-
-All simulation data is synthetic. Parameters (prices, yield rates, costs) are
-calibrated from the public sources in Table~\ref{tab:datasources}; the
-simulation output is not adjusted to hit any target.
-
-A critical design property is \emph{decoupled note generation}. In all three
-scenarios, the technician note or review text is generated from an independent
-noisy observation of ground-truth condition, not from the condition that sets
-true yield. Two corruption modes: omission (note becomes uninformative,
-$p=0.15$) and severity mislabeling (perceived severity drifts by one adjacent
-category, $p=0.25$). Any extractor--yield correlation in the results therefore
-comes from genuine signal recovery, not from a construction artifact. See
-\texttt{src/data\_generators/noise.py} in the RLDB.
-
-\begin{table}[t]
-\caption{Parameter Calibration Sources. All simulation assets, notes, and
-  yield values are synthetic; these sources inform parameter values only.}
+\begin{table}[!t]
+\caption{Parameter Calibration Sources (simulation data is entirely synthetic;
+  these sources inform parameter values only)}
 \label{tab:datasources}
 \centering\small
 \begin{tabular}{lll}
 \toprule
-Parameter calibrated & Public source used & Scenario \\
+Parameter calibrated & Source & Scen. \\
 \midrule
-Component prices & PCPartPicker, eBay completed & S1 \\
-Yield by age & Backblaze Drive Stats~\cite{Backblaze} & S1 \\
-              & Eurostat WEEE stats & S1 \\
-Disassembly costs & BLS NAICS 562920, iFixit & S1 \\
-SDR condition dist. & FAA SDR database~\cite{FAASDR} & S2 \\
-Part prices & ILS, PartBase, HEICO & S2 \\
-MRO costs & FAA Part~145 rate surveys & S2 \\
-Return condition & CPSC SaferProducts~\cite{CPSC} & S3 \\
-Refurb values & Back Market, Decluttr & S3 \\
-Note vocabulary & iFixit teardowns, ATA codes & S1, S2 \\
-                & Amazon review corpus~\cite{Hou2024} & S3 \\
+Component prices    & PCPartPicker, eBay completed  & S1 \\
+Yield by age        & Backblaze Drive Stats~\cite{Backblaze} & S1 \\
+                    & Eurostat WEEE statistics      & S1 \\
+Disassembly costs   & BLS NAICS 562920, iFixit      & S1 \\
+SDR condition dist. & FAA SDR database~\cite{FAASDR}& S2 \\
+MRO part prices     & ILS, PartBase, HEICO          & S2 \\
+MRO labor costs     & FAA Part~145 rate surveys     & S2 \\
+Return condition    & CPSC SaferProducts~\cite{CPSC}& S3 \\
+Refurb resale value & Back Market, Decluttr         & S3 \\
+Note vocabulary     & iFixit teardowns, ATA codes   & S1, S2 \\
+                    & Amazon Reviews~\cite{Hou2024} & S3 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Baselines and Metrics}
+\smallskip\noindent\textbf{Decoupled note generation.}
+In all three scenarios the technician note or review text is generated from an
+independent noisy observation of the ground-truth condition, not from the
+condition that determines true yield. Corruption modes: omission ($p{=}0.15$,
+note becomes uninformative) and severity mislabeling ($p{=}0.25$, perceived
+severity drifts one adjacent category). Any extractor--yield correlation is
+therefore earned through genuine signal recovery, not baked in by construction.
+See \texttt{src/data\_generators/noise.py} in the RLDB.
 
-We compare against five baselines: (1)~\emph{Random disposition}---random
-$L_2$/$L_1$/scrap assignment, no ranking (lower bound); (2)~\emph{Rule-based
-FIFO}---whole-unit processing in arrival order, no disassembly optimization;
-(3)~\emph{XGBoost proxy}---greedy optimizer with $\phi$ from age bracket only,
-learned on a held-out training population (seed 99999, $N=2000$) independent
-of all evaluation seeds; (4)~\emph{Optimization-only} ($\phi=1.0$, full
-inspection)---the primary comparison baseline; and (5)~\emph{Semantic-only}---
-text signals with threshold-based routing only, no optimizer.
+\smallskip\noindent\textbf{Baselines.}
+(1)~\emph{Random}---random $L_2$/$L_1$/scrap assignment (lower bound);
+(2)~\emph{Rule-based FIFO}---whole-unit processing in arrival order;
+(3)~\emph{XGBoost proxy}---greedy optimizer, $\phi$ from age bracket only,
+learned on a held-out population (seed~99999, $N{=}2000$);
+(4)~\emph{Opt-only}---$\phi{=}1.0$, full inspection, greedy optimizer
+(primary comparison); (5)~\emph{Semantic-only}---text signals, threshold
+routing, no optimizer.
 
-Three metrics: \emph{Total Recovery Value} (TRV), net dollars after all
-processing, inspection, and disposal costs; \emph{Demand Coverage Rate} (DCR),
-fraction of incoming assets routed to a recovery pathway; and \emph{Inspection
-Cost Savings} (ICS), total dollars saved relative to inspecting every asset at
-full depth. Note that ICS for non-adaptive baselines (Random, XGBoost, Opt-only)
-reflects only capacity-scrapping savings, not inspection policy savings. The
-incremental inspection saving attributable to the adaptive policy is
-$\mathrm{ICS}_\text{Ours} - \mathrm{ICS}_\text{Opt-only}$: \$23,688 (S1),
-\$10,167 (S2), and \$628 (S3).
+\smallskip\noindent\textbf{Metrics.}
+\emph{TRV}: net dollars after all processing, inspection, and disposal costs.
+\emph{DCR}: fraction of incoming assets routed to a recovery pathway.
+\emph{ICS}: dollars saved relative to inspecting every asset at full depth.
+ICS for non-adaptive baselines (Random, XGBoost, Opt-only) reflects only
+capacity-scrapping savings. The inspection saving \emph{attributable to the
+adaptive policy} is $\Delta\text{ICS} = \text{ICS}_\text{Ours} -
+\text{ICS}_\text{Opt-only}$: \$23,688 (S1), \$10,167 (S2), \$628 (S3).
 
-\subsection{Results}
-\label{sec:results}
+\subsection{Results}\label{sec:results}
 
-Table~\ref{tab:main} reports the main results, averaged over 30 independent
-seeds. Each seed controls batch composition, per-asset yield draws, and demand
+Table~\ref{tab:main} reports results averaged over 30 independent seeds.
+Each seed controls batch composition, per-asset yield draws, and demand
 realization via a single master RNG with independent child streams. The same
-seed is used across all methods, so paired comparisons are exact.
+seed is used across all methods, making paired comparisons exact.
 
-\begin{table*}[t]
-\caption{Net Recovery Performance Across Scenarios (USD K; mean over 30 seeds)}
+\begin{table*}[!t]
+\caption{Net Recovery Performance Across Scenarios
+  (USD~K; mean over 30 seeds; $p{<}0.001$, paired Wilcoxon vs.\ Opt-only)}
 \label{tab:main}
 \centering
-\begin{tabular}{lrrrrrrrrr}
+\begin{tabular}{l *{3}{rr@{\hspace{4pt}}r}}
 \toprule
-& \multicolumn{3}{c}{S1: IT Infrastructure} &
-  \multicolumn{3}{c}{S2: Aviation MRO} &
-  \multicolumn{3}{c}{S3: Consumer Electronics} \\
+ & \multicolumn{3}{c}{S1: IT Infrastructure}
+ & \multicolumn{3}{c}{S2: Aviation MRO}
+ & \multicolumn{3}{c}{S3: Consumer Electronics} \\
 \cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
 System & TRV & DCR & ICS & TRV & DCR & ICS & TRV & DCR & ICS \\
 \midrule
-Random        &  299 & 67\% &  13 & 1,077 & 66\% & 17 & $-$12 & 66\% &  7 \\
-Rule-based    &    7 &100\% &   0 &    85 &100\% &  0 & $-$25 &100\% &  0 \\
-XGBoost       &  570 & 78\% &   8 & 1,678 & 52\% & 24 &    71 & 87\% &  1 \\
-Opt-only      &  533 & 78\% &   8 & 1,565 & 52\% & 24 &    68 & 96\% &  1 \\
-Sem.-only     &  551 & 95\% &  32 & 1,377 & 75\% & 34 & $-$14 & 65\% &  5 \\
-\textbf{Ours} &\textbf{606}&\textbf{100\%}&\textbf{32}&\textbf{1,610}&\textbf{57\%}&\textbf{34}&\textbf{71}&\textbf{94\%}&\textbf{1} \\
+Random      &  299 & 67\%  & 13 & 1{,}077 & 66\% & 17 & $-$12 & 66\% &  7 \\
+Rule-based  &    7 & 100\% &  0 &      85 &100\% &  0 & $-$25 &100\% &  0 \\
+XGBoost     &  570 & 78\%  &  8 & 1{,}678 & 52\% & 24 &    71 & 87\% &  1 \\
+Opt-only    &  533 & 78\%  &  8 & 1{,}565 & 52\% & 24 &    68 & 96\% &  1 \\
+Sem.-only   &  551 & 95\%  & 32 & 1{,}377 & 75\% & 34 & $-$14 & 65\% &  5 \\
+\textbf{Ours}
+            & \textbf{606} & \textbf{100\%} & \textbf{32}
+            & \textbf{1{,}610} & \textbf{57\%} & \textbf{34}
+            & \textbf{71} & \textbf{94\%} & \textbf{1} \\
 \midrule
-Lift vs.\ Opt-only & \multicolumn{3}{c}{$+73$ ($+13.7\%$)} &
-                     \multicolumn{3}{c}{$+45$ ($+2.9\%$)} &
-                     \multicolumn{3}{c}{$+3$ ($+4.5\%$)} \\
+Lift vs.\ Opt-only
+ & \multicolumn{3}{c}{$+73$~($+13.7\%$)}
+ & \multicolumn{3}{c}{$+45$~($+2.9\%$)}
+ & \multicolumn{3}{c}{$+3$~($+4.5\%$)} \\
 \bottomrule
-\multicolumn{10}{l}{\footnotesize All $p<0.001$ (paired Wilcoxon vs.\ Opt-only, 30 seeds).
-  TRV values $<\$100$K shown as rounded integers.}\\
-\multicolumn{10}{l}{\footnotesize $p$-value reflects simulation stability across seeds,
-  not cross-dataset generalization.}\\
+\multicolumn{10}{l}{\footnotesize
+  $p$-value reflects simulation stability across seeds, not cross-dataset
+  generalization. TRV values $<$\$100K shown as rounded integers.
+  Reproduce: \texttt{python scripts/run\_summary.py --seeds 0-29}.}
 \end{tabular}
 \end{table*}
 
-\smallskip
-\noindent\textbf{S1.}
-The \$73K TRV advantage over Opt-only (+13.7\%) has two separable sources. The
-adaptive inspection policy alone (Sem.-only, no optimizer) already adds \$18K
-(+3.3\%) by skipping \$32K in inspection cost that every inspect-everything
-baseline pays regardless. The greedy optimizer, on top of that, adds another
-\$55K by routing assets to the right recovery level. Both components contribute
-independently. Full demand coverage (DCR 100\%) reflects that with a $r=0.47$
-text signal, the optimizer can route every asset to a positive-value path.
+\smallskip\noindent\textbf{S1: IT Infrastructure.}
+The \$73K TRV lift over Opt-only ($+13.7\%$) separates cleanly into two sources.
+The adaptive inspection policy alone (Sem.-only, no optimizer) adds \$18K
+($+3.3\%$) by skipping \$32K in inspection cost that every inspect-everything
+baseline pays unconditionally. The greedy optimizer on top adds another \$55K
+by routing assets to the right recovery level. Both components contribute
+independently. Full demand coverage (DCR 100\%) shows that a $r{=}0.47$ text
+signal is sufficient for the optimizer to route every asset to a positive-value
+recovery path.
 
-\smallskip
-\noindent\textbf{S2.}
-The value decomposition in S2 is different and worth stating directly. Text +
-adaptive inspection alone (Sem.-only) destroys \$188K relative to Opt-only
-because threshold routing without capacity-aware ranking over-processes
-low-value assets and misses the ones inspection would catch. The greedy optimizer
-recovers \$233K from that hole, leaving a net lift of +\$45K (+2.9\%). XGBoost
-outperforms Ours in absolute TRV (\$1,678K vs.\ \$1,610K) because it combines a
-calibrated prior ($\phi \approx 0.55$) with full inspection, avoiding any
-coverage gaps. At $r=0.32$ text calibration, the inspection savings Ours gains
-do not fully compensate for the recoveries it occasionally misses. In a
-Part~145-regulated domain, this is the right mode: text directs triage effort;
-it does not replace physical inspection authority.
+\smallskip\noindent\textbf{S2: Aviation MRO.}
+The value decomposition here differs structurally from S1. Sem.-only (text +
+adaptive inspection, no optimizer) destroys \$188K vs.\ Opt-only because
+threshold routing over-processes low-value assets without capacity-aware ranking.
+The optimizer recovers \$233K of that, leaving a net $+$\$45K ($+2.9\%$). XGBoost
+outperforms Ours in absolute TRV (\$1,678K vs.\ \$1,610K): combining a
+calibrated prior ($\phi{\approx}0.55$) with full inspection avoids any coverage
+gap. At $r{=}0.32$ text calibration, the savings from the adaptive policy do not
+fully offset the recoveries occasionally missed via wrong skips. In a
+Part~145-regulated domain this advisory mode is correct: text directs triage
+effort but does not replace mandated inspection authority.
 
-\smallskip
-\noindent\textbf{S3.}
-Consumer returns follow the triage pattern. Sem.-only produces strongly negative
-TRV ($-\$14$K) because inspection costs exceed recovery value for the assets
-threshold routing selects. Ours avoids this by applying the optimizer, landing
-at +\$3K (+4.5\%) over Opt-only. Notably, Ours achieves this at slightly
-\emph{lower} DCR than Opt-only (93.8\% vs.\ 96.0\%): when phi drops below the
-breakeven point, the optimizer correctly scraps the asset rather than processing
-it at a loss. Lower DCR here means better selective scrapping, not worse
-coverage.
+\smallskip\noindent\textbf{S3: Consumer Electronics.}
+Sem.-only produces negative TRV ($-$\$14K) because inspection costs exceed
+recovery value for the assets threshold routing selects. Ours reaches
+$+$\$3K ($+4.5\%$) over Opt-only by combining text routing with the optimizer.
+Ours achieves this at \emph{lower} DCR than Opt-only (93.8\% vs.\ 96.0\%):
+when $\phi$ falls below the breakeven point, the optimizer scraps the asset
+rather than processing it at a loss. Lower DCR is correct selective behavior,
+not degraded coverage.
 
-\smallskip
-\noindent\textbf{Statistical note.}
+\smallskip\noindent\textbf{Statistical note.}
 Randomness enters only through Monte Carlo yield sampling and seed-varied asset
-populations. The $p<0.001$ over 30 seeds measures stability of these effects,
-not generalization to held-out datasets or to a different extractor. Every value
-in Table~\ref{tab:main} reproduces from
-\texttt{python scripts/run\_summary.py --seeds 0-29} in the RLDB.
+populations. $p{<}0.001$ over 30 seeds measures stability of these effects,
+not generalization to held-out datasets or to a different extractor.
 
-\subsection{Extractor Calibration}
-\label{sec:calibration}
+\subsection{Extractor Calibration}\label{sec:calibration}
 
 Table~\ref{tab:calibration} reports Pearson $r$ between extractor $\phi$ and
-realized yield, pooled over 30 seeds (15,000 evaluations for S1/S2; 30,000 for
-S3). Two extractors are compared: the conservative keyword classifier from the
-main simulation, and a full-vocabulary phrase matcher described in
-Section~III-C that reads the same noisy decoupled notes but covers the complete
-condition vocabulary for each scenario.
+realized yield, pooled over 30 seeds. Two extractors are compared: the
+conservative keyword classifier from the main simulation, and the full-vocabulary
+phrase matcher that covers the complete condition vocabulary per scenario.
 
-\begin{table}[t]
-\caption{Extractor Calibration on the Synthetic Benchmark\\
-  ($r$ = Pearson between $\phi$ and true yield, pooled over 30 seeds)}
+\begin{table}[!t]
+\caption{Extractor Calibration on the Decoupled Synthetic Benchmark
+  ($r$ = Pearson between $\phi$ and true yield, pooled over 30 seeds).
+  Neither extractor sees ground-truth condition labels.}
 \label{tab:calibration}
-\centering
-\begin{tabular}{lcrr}
+\centering\small
+\begin{tabular}{lccc}
 \toprule
 Scenario & $N$ & Keyword & Full-vocab \\
          &     & (conservative) & (note-reading ceiling) \\
 \midrule
-S1: IT Infrastructure    & 15,000 & 0.47 & 0.73 \\
-S2: Aviation MRO         & 15,000 & 0.32 & 0.54 \\
-S3: Consumer Electronics & 30,000 & 0.36 & 0.74 \\
+S1: IT Infrastructure    & 15{,}000 & 0.47 & 0.73 \\
+S2: Aviation MRO         & 15{,}000 & 0.32 & 0.54 \\
+S3: Consumer Electronics & 30{,}000 & 0.36 & 0.74 \\
 \bottomrule
-\multicolumn{4}{l}{\footnotesize Both extractors are deterministic phrase matchers.}\\
-\multicolumn{4}{l}{\footnotesize Full-vocab reads the same noisy decoupled note as}\\
-\multicolumn{4}{l}{\footnotesize keyword; neither sees ground-truth condition labels.}\\
 \end{tabular}
 \end{table}
 
-Three things stand out in Table~\ref{tab:calibration}. First, the gap between
-the conservative keyword and the full-vocabulary extractor spans 0.26--0.38
-Pearson units, meaning a better note-reader on the same text would produce
-substantially better framework decisions without any architectural change. Second,
-the keyword fallback rate (share of notes where no signal fires, $\phi$ defaults
-to 1.0) is 28\% for S1, 43\% for S2, and 55\% for S3. More colloquial and
-abbreviated text generates more uninformative notes, which explains the ordering
-of keyword $r$ values. Third, the two $r$ values differ across all three
-scenarios, ruling out a shared evaluation artifact.
+Three observations. First, the gap spans 0.26--0.38 Pearson units across
+scenarios: a better note-reader on the same text would substantially improve
+framework decisions without any architectural change, confirming the
+extractor-agnostic design. Second, keyword fallback rates (share of notes where
+no signal fires, $\phi{\gets}1.0$) are 28\% (S1), 43\% (S2), and 55\% (S3),
+explaining the ordering of keyword $r$ values---more colloquial and abbreviated
+text generates more uninformative notes. Third, the values differ across all
+three scenarios, ruling out a shared evaluation artifact.
 
-\smallskip
-\noindent\textbf{S1.}
-At $r=0.47$ the keyword extractor is substantially above chance on decoupled
-data, confirming its vocabulary carries real signal. The full-vocab ceiling
-$r=0.73$ is bounded by the note noise imposed during generation
-($p_\text{omit}=0.15$, $p_\text{mislabel}=0.25$); organic technician notes
-would have different noise characteristics.
+S2 is the only scenario where the full-vocabulary ceiling (0.54) is
+substantially lower than S1/S3. ATA maintenance codes collapse distinct
+conditions into near-identical vocabulary; even a complete phrase matcher cannot
+reliably order them. This is an information-theoretic limitation of the coding
+system, not of the extractor architecture. S3 shows the opposite: consumer
+return language uses unambiguous categorical extremes (``dead,'' ``swollen
+battery,'' ``unopened box'') that map cleanly even when the note is noisy, which
+is why the full-vocab ceiling (0.74) exceeds S1 (0.73) despite S3 having a
+weaker keyword $r$.
 
-\smallskip
-\noindent\textbf{S2.}
-ATA codes collapse distinct conditions into near-identical vocabulary, so the
-full-vocab reader cannot reliably order them either. The ceiling at 0.54 is lower
-than S1 or S3 because the coding system itself destroys ordinal information
-before any extractor reads the note.
+\subsection{Error Analysis and Case Studies}
 
-\smallskip
-\noindent\textbf{S3.}
-The full-vocab ceiling (0.74) exceeds S1 (0.73) despite S3 having a weaker
-keyword $r$. Consumer return language uses unambiguous categorical extremes:
-``dead,'' ``swollen battery,'' ``unopened box.'' The full-vocab reader maps these
-cleanly. IT notes carry more mixed-signal phrasing (``fan loud but functional'')
-that partially confuses the classifier even when it reads the note correctly.
+\noindent\textbf{Error analysis.}
+Errors are asset-level cases where the framework's realized recovery falls more
+than \$50 below Opt-only on the same asset. The dominant mode is
+overestimation: $\phi$ is assigned higher than warranted, the system skips
+inspection, and the asset is worse than the text implied. Error rates are
+approximate: $\sim$9\% in S1 (45/500~assets), $\sim$24\% in S2 (118/500),
+near-zero in S3. Total estimated loss: \$31K (S1), \$70K (S2), negligible (S3),
+below the semantic lift in every case.
 
-\subsection{Error Analysis}
+\smallskip\noindent\textbf{Case 1: Correct skip (S1).}
+Note: ``\textit{Routine decommission. All components seated properly. No
+corrosion.}'' Extractor: $\phi{=}0.95$, $\sigma{=}0.95$. Asset skips inspection
+and proceeds directly to $L_2$ disassembly, recovering \$4,200 while saving
+\$200 in inspection cost. Inspection targeting works as intended.
 
-Per-asset errors are cases where the framework's realized recovery falls more
-than \$50 below what Opt-only would have achieved on the same asset. The dominant
-error is overestimation: the extractor assigns $\phi$ higher than warranted,
-the system skips inspection, and the asset turns out worse than the text implied.
-Error rates are approximate (estimated from sampling): roughly 9\% in S1
-(45/500~assets), 24\% in S2 (118/500), near-zero in S3. Total estimated loss
-from errors is \$31K (S1), \$70K (S2), and negligible in S3, below the semantic
-lift in every case. The S2 rate is the clearest argument for keeping a human in
-the loop: keyword matching cannot infer whether a logged repair resolved the
-underlying defect.
-
-\subsection{Case Studies}
-
-\noindent\textbf{Case 1 --- Correct skip (S1).}
-A note reads ``\textit{Routine decommission. All components seated properly.
-No corrosion.}'' The extractor returns $\phi=0.95$, $\sigma=0.95$. The asset
-skips inspection and goes directly to $L_2$ disassembly, recovering \$4,200
-in components and saving \$200 in inspection cost.
-
-\noindent\textbf{Case 2 --- Correct flag (S1).}
-A note reads ``\textit{PSU failure. Visible burn marks on mainboard near power
-connector J12. CPU smells burnt.}'' The extractor returns $\phi=0.05$, $\sigma=0.95$.
-The very low $\phi$ routes the asset to scrap, avoiding \$70 in wasted disassembly.
-Confidence ($\sigma$) and condition ($\phi$) are independent axes; the model is
-certain the unit is damaged.
-
-\noindent\textbf{Case 3 --- Overestimation failure (S2).}
-An SDR reads ``\textit{Oil on bottom of \#1 engine fan cowl. Replaced filter
-and packing.}'' The keyword extractor detects ``replaced'' and emits $\phi=0.98$,
-$\sigma=0.85$. The true yield factor is 0.59: the repair addressed a symptom,
-not the cause. The overestimation costs \$8,669 against the full-inspection
-baseline. A keyword matcher cannot infer whether a logged repair resolved the
-underlying defect---this case is why aviation MRO must operate in advisory mode,
-with the text signal directing effort rather than replacing inspection authority.
-
-\noindent\textbf{Case 4 --- Categorical triage (S3).}
-A review reads ``\textit{It just stopped working after a week. Screen never
-turned on.}'' Continuous yield prediction on this text is near-zero, but the
-extractor correctly bins the unit as ``likely dead'' and routes it to component
-harvesting rather than whole-unit refurbishment. The value is categorical routing
-at volume, not a precise yield estimate.
+\smallskip\noindent\textbf{Case 2: Overestimation failure (S2).}
+SDR: ``\textit{Oil on bottom of \#1 engine fan cowl. Replaced filter and
+packing.}'' Extractor detects ``replaced'' and emits $\phi{=}0.98$,
+$\sigma{=}0.85$. True yield factor: 0.59---the repair addressed a symptom, not
+the cause. Overestimation costs \$8,669 against the full-inspection baseline.
+A keyword classifier cannot infer whether a logged repair resolved the underlying
+defect; this case explains why S2 must operate in advisory mode with a human in
+the loop.
 
 \subsection{Sensitivity Analysis}
 
-\noindent\textbf{Capacity.}
-At 50\% of baseline capacity, S1 TRV drops 43\% and S2 drops 23\%. When
-capacity binds, the engine concentrates on the highest-value assets; the response
-is smooth and proportionate.
+\noindent\textbf{Capacity constraints.}
+At 50\% of baseline capacity, S1 TRV drops 43\% and S2 drops 23\%. The engine
+concentrates on the highest-value assets; selective harvesting is smooth and
+proportionate.
 
 \noindent\textbf{Confidence thresholds.}
-Sweeping $\tau_h$ from 0.5 to 0.95 and $\tau_l$ from 0.2 to 0.75: S1 and S2
-favor $\tau_h=0.5$, $\tau_l=0.25$; S3 favors the narrower gap ($\tau_l=0.45$).
-Moderate confidence is enough to skip inspection profitably because the expected
-cost of a wrong skip (\$200--700) is often less than the certain cost of
-universal inspection (\$120--200 per asset).
+S1/S2 favor $\tau_h{=}0.5$, $\tau_l{=}0.25$ (aggressive skip). S3 favors
+$\tau_l{=}0.45$. Moderate confidence is sufficient to skip inspection profitably
+because the expected cost of a wrong skip (\$200--700) is often less than the
+certain cost of universal inspection (\$120--200 per asset).
 
 \noindent\textbf{$\kappa$ sensitivity.}
-Table~\ref{tab:kappa} reports S1 TRV lift across $\kappa \in \{5, 10, 20, 40,
-60, 80\}$. The profile is near-flat (spread: 0.86 percentage points), confirming
-the analysis in Section~\ref{sec:framework-prior}: the Beta mean is
-$\kappa$-invariant, so $\kappa$ does not change which assets get processed or
-how they are ranked. We keep $\kappa=10$.
+Table~\ref{tab:kappa} confirms that $\kappa$ does not change which assets get
+processed (the Beta mean is $\kappa$-invariant). The near-flat profile validates
+the central claim: framework value comes from inspection targeting, not from
+prior concentration.
 
-\begin{table}[t]
-\caption{Effect of $\kappa$ on S1 TRV Lift (30 seeds)}
+\begin{table}[!t]
+\caption{$\kappa$ Sensitivity: S1 TRV Lift (\%) over 30 Seeds.
+  Spread = 0.86\,pp; Beta mean is $\kappa$-invariant.}
 \label{tab:kappa}
-\centering
+\centering\small
 \begin{tabular}{lcccccc}
 \toprule
-$\kappa$ & 5 & 10 & 20 & 40 & 60 & 80 \\
+$\kappa$       & 5    & 10   & 20   & 40   & 60   & 80 \\
 \midrule
-TRV lift (\%) & 14.0 & 13.7 & 14.1 & 14.2 & 14.6 & 13.9 \\
+TRV lift (\%)  & 14.0 & 13.7 & 14.1 & 14.2 & 14.6 & 13.9 \\
 \bottomrule
-\multicolumn{7}{l}{\footnotesize Spread: 0.86\,pp. The Beta mean is $\kappa$-invariant; decisions do}\\
-\multicolumn{7}{l}{\footnotesize not change with $\kappa$.}\\
 \end{tabular}
 \end{table}
 
-%---------------------------------------------------------------------------
+%----------------------------------------------------------------------
 \section{Discussion}
 
 \subsection{Practical Implications}
 
-The framework needs no specialized solver: a greedy allocator with MC sampling
-and any extractor satisfying a lightweight interface. Adapting to a new industry
-means updating the extraction vocabulary and recalibrating the $\phi$-to-yield
-mapping, not retraining a model. This makes it accessible to operators without
-ML infrastructure.
-
-The strongest use case is where text already exists as part of normal operations
-(IT decommission work orders, MRO records) and inspection is the binding resource.
-There, even the conservative keyword extractor reduces inspection spend while
-recovering competitive TRV. In high-volume, low-margin settings like consumer
-returns, the triage framing matters more than the dollar lift: the framework
-tells operators which units to route where, without inspecting every one.
+The framework requires only a greedy MC allocator and any extractor satisfying a
+lightweight two-output interface. Adapting to a new domain means updating the
+extraction vocabulary and recalibrating the $\phi$-to-yield mapping, not
+retraining a model. The strongest deployment case is where text already exists as
+part of normal operations (IT decommission work orders, MRO records) and
+inspection is the binding resource. In high-volume, low-margin settings the
+triage framing is the contribution: routing returns to the right quality tier
+without inspecting every unit.
 
 \subsection{Limitations}
 
-All simulation data is synthetic, though calibrated from real sources. Organic
-text from actual operations may have noise characteristics that differ from the
-synthetic notes and would require extractor recalibration before deployment. The
-S2 error rate (roughly 24\%) means the framework should not operate autonomously
-in safety-critical domains; its role there is to prioritize and triage, not to
-replace mandated physical inspection. The optimization is single-period; inventory
-carry-over and multi-period dynamics remain open. The $p<0.001$ result measures
-simulation stability, not generalization across datasets or extractors.
+All simulation data is synthetic, calibrated from real sources. Organic notes
+from actual operations may have noise characteristics requiring extractor
+recalibration. The $\sim$24\% S2 error rate confirms the framework should not
+operate autonomously in safety-critical domains; it should direct triage effort,
+not replace mandated physical inspection. The optimization is single-period;
+multi-period dynamics with inventory carry-over remain open. The $p{<}0.001$
+result measures simulation stability across seeds, not generalization across
+datasets or extractors.
 
-\subsection{RLDB Benchmark}
+\subsection{RLDB Benchmark and Reproducibility}
 
-The Reverse Logistics Decision Benchmark released with this paper contains
-scenario configurations for all three settings, stochastic asset generators with
-decoupled note-condition generation, calibration scripts that reproduce every
-reported table without manual steps, and all five baseline implementations.
+The Reverse Logistics Decision Benchmark (RLDB) contains: scenario
+configurations for all three settings; stochastic generators with decoupled
+note--condition generation; scripts that reproduce every table without manual
+steps; and all five baseline implementations. Key commands:
 
-\texttt{python scripts/run\_summary.py --seeds 0-29} reproduces Table~\ref{tab:main}.
-\texttt{run\_calibration.py} reproduces Table~\ref{tab:calibration}.
-\texttt{run\_kappa\_sweep.py} reproduces Table~\ref{tab:kappa}.
+\begin{itemize}[noitemsep]
+\item \texttt{run\_summary.py --seeds 0-29} $\rightarrow$ Table~\ref{tab:main}
+\item \texttt{run\_calibration.py --seeds 0-29} $\rightarrow$ Table~\ref{tab:calibration}
+\item \texttt{run\_kappa\_sweep.py --seeds 0-29} $\rightarrow$ Table~\ref{tab:kappa}
+\end{itemize}
 
-Repository: \href{https://github.com/shuan63/reverse_logistics}{github.com/shuan63/reverse\_logistics}.
+Repository:
+\href{https://github.com/shuan63/reverse_logistics}{github.com/shuan63/reverse\_logistics}.
 
-\subsection{Data Availability}
-
-All code, scenario configurations, parameter calibration sources, and scripts
-to reproduce every table and figure in this paper are available in the RLDB
-repository under the MIT License. No proprietary data was used. Synthetic data
+\subsection*{Data Availability}
+All code, configurations, and calibration sources are available in the RLDB
+repository under the MIT License. No proprietary data was used; synthetic data
 is generated deterministically from published seeds.
 
-\subsection{Author Contributions (CRediT)}
-
+\subsection*{Author Contributions (CRediT)}
 [Author 1]: Conceptualization, Methodology, Software, Formal analysis, Writing
 (original draft). [Author 2]: Validation, Writing (review and editing),
 Supervision. All authors reviewed and approved the final manuscript.
 
-\subsection{Conflict of Interest}
-
+\subsection*{Conflict of Interest}
 The authors declare no conflict of interest.
 
-%---------------------------------------------------------------------------
+%----------------------------------------------------------------------
 \section{Conclusion}
 
-The core finding is simple. Unstructured return text, extracted with even a
+The central finding is that unstructured return text, extracted with even a
 conservative keyword classifier, contains enough signal to reduce inspection
-cost meaningfully while matching or beating the recovery value of an
-inspect-every-asset baseline. The mechanism is not a better yield prediction; it
-is inspection targeting. By skipping inspection on high-confidence assets and
-focusing physical testing on uncertain ones, the framework recovers the same
-economic output at lower cost.
+cost while matching or exceeding the recovery value of an inspect-every-asset
+baseline. The mechanism is inspection targeting: by skipping inspection on
+high-confidence assets and reserving full physical testing for uncertain ones,
+the framework achieves the same economic output at lower cost.
 
-The benefit concentrates where text is genuinely informative. In IT
-infrastructure decommission, with descriptive technician notes ($r=0.47$), the
-keyword extractor delivers a 13.7\% TRV lift and \$32K in inspection savings per
-batch. In aviation MRO, where standardized codes limit text signal ($r=0.32$),
-the framework is advisory: it saves inspection cost and provides positive TRV
-lift over the primary baseline, but a structured-feature baseline with full
-inspection still wins on absolute TRV because the text signal is too weak to
-compensate for reduced coverage. In consumer electronics, where per-unit
-inspection is often economically infeasible, the categorical triage value is the
-contribution, not the dollar lift.
+How much value the framework delivers depends on how informative the text is.
+In IT infrastructure decommission ($r{=}0.47$), the 13.7\% TRV lift over
+Opt-only is the largest, and the adaptive inspection policy alone adds 3.3\%
+before the optimizer is applied---both components are independently useful.
+In aviation MRO ($r{=}0.32$), the framework is advisory: it saves inspection
+cost and outperforms Opt-only, but a structured-feature baseline with full
+inspection achieves higher absolute TRV because the text signal cannot compensate
+for reduced coverage. In consumer electronics, where per-unit inspection is
+rarely economic regardless, the contribution is categorical triage at volume.
 
-The oracle-text calibration bounds (Table~\ref{tab:calibration}) make the
-extractor-agnostic property concrete: the same architecture, with a stronger
-extractor, would reach $r=0.73$ on S1 and $r=0.74$ on S3. Every result in this
-paper is a floor. The gap between the keyword lower bound and the oracle upper
-bound shows how much improvement is possible without changing the decision
-architecture at all.
+The full-vocabulary calibration ceiling in Table~\ref{tab:calibration} quantifies
+the extraction headroom: the same decision architecture, with a stronger extractor,
+would reach $r{=}0.73$ on S1 and $r{=}0.74$ on S3 on the same synthetic
+benchmark. Every number in this paper is a floor, bounded by the deliberate
+conservatism of the keyword classifier. The gap to the ceiling is achievable
+without changing the framework architecture.
 
-%---------------------------------------------------------------------------
+%----------------------------------------------------------------------
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
 
