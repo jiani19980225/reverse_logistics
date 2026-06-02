@@ -35,20 +35,24 @@ strong and falling back to full component-level inspection when it is not.
 
 We validate across three structurally distinct scenarios (enterprise IT
 decommission, aviation MRO, consumer electronics returns) using a conservative
-keyword extractor as a lower bound on extraction quality. Against the
-optimization-only inspect-all baseline (Opt-only), the framework achieves
-positive TRV lift in all three scenarios (2.9--13.7\%, paired Wilcoxon
-$p<0.001$, 30~seeds) while reducing inspection cost. Note that a structured-age
-XGBoost proxy with full inspection outperforms the framework in S2, where the
-keyword text signal is too weak to compensate for reduced inspection coverage;
-this is an expected and honest finding, not a failure of the architecture.
+keyword extractor as a lower bound on extraction quality. The full framework
+(text extraction + adaptive inspection + greedy optimizer) beats the
+optimization-only inspect-all baseline (Opt-only) in all three scenarios
+(TRV lift 2.9--13.7\% vs.\ Opt-only, paired Wilcoxon $p<0.001$, 30~seeds)
+while saving \$628--\$23,688 per batch in inspection cost. In S1, the adaptive
+inspection policy alone (without the full optimizer) already exceeds Opt-only
+by 3.3\%, so both components contribute independently. In S2, a structured-age
+baseline with full inspection outperforms the framework on absolute TRV because
+the text signal is too weak to cover the inspection cost reduction; this is an
+expected result given the weak keyword calibration ($r=0.32$) in that domain.
 
 Keyword-extractor calibration on the decoupled synthetic benchmark gives
 Pearson $r=0.47$ for descriptive IT notes, $r=0.32$ for standardized aviation
-codes, and $r=0.36$ for colloquial consumer text. A deterministic oracle-text
-reader on the same benchmark reaches $r=0.73$, $r=0.54$, and $r=0.74$,
-bounding what a stronger extractor could achieve. All results reproduce from
-the released Reverse Logistics Decision Benchmark (RLDB).
+codes, and $r=0.36$ for colloquial consumer text. A deterministic phrase-matching
+reader with complete note-vocabulary coverage reaches $r=0.73$, $r=0.54$, and
+$r=0.74$ on the same benchmark, bounding what any classifier reading the same
+noisy notes could achieve without seeing ground-truth condition labels. All
+results reproduce from the released Reverse Logistics Decision Benchmark (RLDB).
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -90,21 +94,24 @@ We evaluate across three scenarios chosen to differ structurally:
 
 \begin{itemize}
 \item \textbf{S1 (IT Infrastructure):} Planned decommissions with descriptive
-technician notes. Keyword calibration: $r=0.47$; oracle ceiling: $r=0.73$.
-The framework produces the largest TRV lift (13.7\% over Opt-only) and the
-largest absolute inspection savings.
+technician notes ($r=0.47$; phrase-matching ceiling $r=0.73$). The combined
+framework lifts TRV 13.7\% over Opt-only, and the adaptive inspection policy
+alone (without the full optimizer) adds 3.3\% -- so both components contribute
+value independently.
 
 \item \textbf{S2 (Aviation MRO):} Safety-critical domain, FAA Part~145
-mandated inspection, standardized maintenance codes. Text signal is weak
-($r=0.32$). The framework is advisory, delivering positive TRV lift (2.9\%
-over Opt-only) while reducing inspection cost, but a structured-feature baseline
-with full inspection (XGBoost) achieves higher absolute TRV because the text
-signal is too marginal to compensate for reduced inspection coverage.
+inspection mandates, standardized codes ($r=0.32$). Text + inspection policy
+alone \emph{hurts} TRV in S2 (threshold routing without optimization destroys
+\$188K vs.\ Opt-only); the optimizer recovers \$233K of that, leaving a net
++2.9\% lift over Opt-only. A structured-feature baseline with full inspection
+outperforms on absolute TRV, showing that when the text signal is this weak,
+inspection savings cannot compensate for coverage reduction.
 
 \item \textbf{S3 (Consumer Electronics):} High-volume returns where per-unit
-inspection is rarely economic. Continuous yield prediction is limited ($r=0.36$),
-but routing returns into quality tiers without individual inspection provides
-real value at scale.
+inspection is rarely economic ($r=0.36$). Ours achieves +4.5\% TRV over
+Opt-only at slightly lower demand coverage (93.8\% vs.\ 96.0\%), because the
+text signal correctly identifies marginal assets as unprofitable and scraps them
+rather than processing them at a loss.
 \end{itemize}
 
 \smallskip
@@ -114,8 +121,9 @@ real value at scale.
 stochastic reverse logistics disposition models, with a clean separation between
 extraction and optimization.
 \item An adaptive inspection policy that sets inspection depth per asset from
-extractor confidence, reducing inspection cost without uniformly sacrificing
-coverage.
+extractor confidence. In high-signal settings (S1), the policy alone adds
+measurable TRV over the inspect-all baseline. In weak-signal settings (S2, S3),
+it requires the optimizer to capture net positive value.
 \item A three-scenario simulation study with explicit bounds on extraction
 quality, establishing where text signals add value, where they are advisory,
 and where they enable volume triage. Code and benchmark are released.
@@ -232,16 +240,16 @@ signal fires. Calibration on the decoupled synthetic benchmark
 $r=0.36$ on S3.
 
 \smallskip
-\noindent\textbf{Oracle-text reference extractor.}
+\noindent\textbf{Full-vocabulary reference extractor.}
 To bound what better extraction could achieve on the same benchmark, we
-implement a second deterministic classifier (see Table~\ref{tab:calibration})
-that reads each note and maps the described condition to a recoverability
-estimate via a table fixed before extraction. It is not a true oracle; it reads
-the same noisy, decoupled note as the keyword classifier and cannot see the
-ground-truth condition. This is why its $r$ stays well below 1.0: the note
-itself is a lossy signal, and the imposed noise ($p_\text{omit}=0.15$,
-$p_\text{mislabel}=0.25$) sets a ceiling that no note-reading classifier can
-exceed.
+implement a second deterministic phrase matcher (see Table~\ref{tab:calibration})
+that covers the complete condition vocabulary for each scenario and maps the
+described condition to a recoverability estimate via a table fixed before
+extraction. It reads the same noisy, decoupled note as the keyword classifier
+and cannot see the ground-truth condition. Neither extractor is an oracle. The
+reason both stay below $r=1.0$ is that the note itself is a lossy signal: the
+imposed generation noise ($p_\text{omit}=0.15$, $p_\text{mislabel}=0.25$) sets
+a ceiling that no phrase-matching classifier reading only the note can exceed.
 
 \smallskip
 \noindent\textbf{Extractor choice rationale.}
@@ -276,14 +284,17 @@ posterior computation; the mechanism is analogous to setting a pseudo-count
 that encodes text-derived belief.
 
 \smallskip
-\noindent\textbf{Choice of $\kappa$.}
-We use $\kappa=10$ as a practical default. Sweeping $\kappa \in \{5, 10, 20, 40,
-60, 80\}$ on S1 produces TRV lift between 13.70\% and 14.56\%, a spread of under
-1 percentage point (Table~\ref{tab:kappa}). The near-flatness is analytically
-expected: $\kappa$ scales $\alpha'_c$ and $\beta'_c$ but leaves the Beta mean
-($\phi \cdot \hat{y}_c$) unchanged, and the decision engine ranks assets by
-that Monte Carlo mean. Framework value comes from which assets get inspected,
-not from how tightly the prior concentrates.
+\noindent\textbf{Choice of $\kappa$ and what it tells us.}
+We use $\kappa=10$ as a practical default. The key insight is that $\kappa$
+does not change \emph{which assets get processed}: it scales $\alpha'_c$ and
+$\beta'_c$ proportionally but leaves the Beta mean ($\phi \cdot \hat{y}_c$)
+invariant, and the decision engine ranks assets by that mean. Sweeping $\kappa
+\in \{5,10,20,40,60,80\}$ on S1 confirms this analytically (spread: 0.86
+percentage points, Table~\ref{tab:kappa}). This near-flatness is not a
+limitation; it reveals that the framework's economic value comes from
+\emph{inspection targeting}, not from how confidently the text signal
+concentrates the yield prior. Getting the right assets to the right inspection
+tier is the mechanism.
 
 \subsection{Adaptive Inspection Policy}
 
@@ -355,12 +366,13 @@ comes from genuine signal recovery, not from a construction artifact. See
 \texttt{src/data\_generators/noise.py} in the RLDB.
 
 \begin{table}[t]
-\caption{Parameter Calibration Sources (parameters only; simulation data is synthetic)}
+\caption{Parameter Calibration Sources. All simulation assets, notes, and
+  yield values are synthetic; these sources inform parameter values only.}
 \label{tab:datasources}
 \centering\small
 \begin{tabular}{lll}
 \toprule
-Parameter & Source & Scenario \\
+Parameter calibrated & Public source used & Scenario \\
 \midrule
 Component prices & PCPartPicker, eBay completed & S1 \\
 Yield by age & Backblaze Drive Stats~\cite{Backblaze} & S1 \\
@@ -391,7 +403,12 @@ text signals with threshold-based routing only, no optimizer.
 Three metrics: \emph{Total Recovery Value} (TRV), net dollars after all
 processing, inspection, and disposal costs; \emph{Demand Coverage Rate} (DCR),
 fraction of incoming assets routed to a recovery pathway; and \emph{Inspection
-Cost Savings} (ICS), dollars saved by the adaptive policy vs. full inspection.
+Cost Savings} (ICS), total dollars saved relative to inspecting every asset at
+full depth. Note that ICS for non-adaptive baselines (Random, XGBoost, Opt-only)
+reflects only capacity-scrapping savings, not inspection policy savings. The
+incremental inspection saving attributable to the adaptive policy is
+$\mathrm{ICS}_\text{Ours} - \mathrm{ICS}_\text{Opt-only}$: \$23,688 (S1),
+\$10,167 (S2), and \$628 (S3).
 
 \subsection{Results}
 \label{sec:results}
@@ -433,35 +450,38 @@ Lift vs.\ Opt-only & \multicolumn{3}{c}{$+73$ ($+13.7\%$)} &
 
 \smallskip
 \noindent\textbf{S1.}
-The \$73K TRV advantage over Opt-only (+13.7\%) comes from two sources. The
-keyword extractor flags damaged assets early, preventing wasted disassembly on
-units that would otherwise be inspected and then scrapped. The adaptive
-inspection policy skips \$32K in inspection cost that every inspect-everything
-baseline pays unconditionally. Full demand coverage (DCR 100\%) reflects that
-with a $r=0.47$ text signal, the optimizer has enough information to route every
-asset to a positive-value recovery path.
+The \$73K TRV advantage over Opt-only (+13.7\%) has two separable sources. The
+adaptive inspection policy alone (Sem.-only, no optimizer) already adds \$18K
+(+3.3\%) by skipping \$32K in inspection cost that every inspect-everything
+baseline pays regardless. The greedy optimizer, on top of that, adds another
+\$55K by routing assets to the right recovery level. Both components contribute
+independently. Full demand coverage (DCR 100\%) reflects that with a $r=0.47$
+text signal, the optimizer can route every asset to a positive-value path.
 
 \smallskip
 \noindent\textbf{S2.}
-The TRV lift over Opt-only is positive but modest (+\$45K, +2.9\%). XGBoost
-outperforms Ours in absolute TRV (\$1,678K vs.\ \$1,610K). This happens for a
-structural reason: XGBoost uses its trained prior ($\phi \approx 0.55$, close to
-the true marginal mean yield) combined with full inspection, so it gets a
-calibrated prior and no inspection gaps. Ours saves \$10K more in inspection
-cost but at $r=0.32$ text calibration, the occasional missed recovery from a
-wrong inspection skip costs more than the savings justify. In a domain with
-mandatory physical inspection (FAA Part~145), this advisory operating point is
-the correct one: use text to direct triage and prioritize inspection effort, not
-to eliminate it.
+The value decomposition in S2 is different and worth stating directly. Text +
+adaptive inspection alone (Sem.-only) destroys \$188K relative to Opt-only
+because threshold routing without capacity-aware ranking over-processes
+low-value assets and misses the ones inspection would catch. The greedy optimizer
+recovers \$233K from that hole, leaving a net lift of +\$45K (+2.9\%). XGBoost
+outperforms Ours in absolute TRV (\$1,678K vs.\ \$1,610K) because it combines a
+calibrated prior ($\phi \approx 0.55$) with full inspection, avoiding any
+coverage gaps. At $r=0.32$ text calibration, the inspection savings Ours gains
+do not fully compensate for the recoveries it occasionally misses. In a
+Part~145-regulated domain, this is the right mode: text directs triage effort;
+it does not replace physical inspection authority.
 
 \smallskip
 \noindent\textbf{S3.}
-Consumer returns follow the triage pattern. Sem.-only (threshold routing, no
-optimizer) produces negative TRV because inspection costs exceed recovery value
-for the mix of assets it selects; Ours avoids this by combining text routing with
-the greedy optimizer, landing at +\$3K (+4.5\%) over Opt-only. At 1000 units
-per batch with \$20 inspection costs, even small improvements in routing fraction
-compound materially.
+Consumer returns follow the triage pattern. Sem.-only produces strongly negative
+TRV ($-\$14$K) because inspection costs exceed recovery value for the assets
+threshold routing selects. Ours avoids this by applying the optimizer, landing
+at +\$3K (+4.5\%) over Opt-only. Notably, Ours achieves this at slightly
+\emph{lower} DCR than Opt-only (93.8\% vs.\ 96.0\%): when phi drops below the
+breakeven point, the optimizer correctly scraps the asset rather than processing
+it at a loss. Lower DCR here means better selective scrapping, not worse
+coverage.
 
 \smallskip
 \noindent\textbf{Statistical note.}
@@ -476,8 +496,10 @@ in Table~\ref{tab:main} reproduces from
 
 Table~\ref{tab:calibration} reports Pearson $r$ between extractor $\phi$ and
 realized yield, pooled over 30 seeds (15,000 evaluations for S1/S2; 30,000 for
-S3). Two extractors are compared: the keyword classifier from the main simulation,
-and the oracle-text reader described in Section~III-C.
+S3). Two extractors are compared: the conservative keyword classifier from the
+main simulation, and a full-vocabulary phrase matcher described in
+Section~III-C that reads the same noisy decoupled notes but covers the complete
+condition vocabulary for each scenario.
 
 \begin{table}[t]
 \caption{Extractor Calibration on the Synthetic Benchmark\\
@@ -486,50 +508,51 @@ and the oracle-text reader described in Section~III-C.
 \centering
 \begin{tabular}{lcrr}
 \toprule
-Scenario & $N$ & Keyword & Oracle-text \\
-         &     & (lower bound) & (upper bound) \\
+Scenario & $N$ & Keyword & Full-vocab \\
+         &     & (conservative) & (note-reading ceiling) \\
 \midrule
 S1: IT Infrastructure    & 15,000 & 0.47 & 0.73 \\
 S2: Aviation MRO         & 15,000 & 0.32 & 0.54 \\
 S3: Consumer Electronics & 30,000 & 0.36 & 0.74 \\
 \bottomrule
-\multicolumn{4}{l}{\footnotesize Both extractors are deterministic; neither is a
-  language model.}\\
-\multicolumn{4}{l}{\footnotesize Oracle-text reads the noisy decoupled note,}\\
-\multicolumn{4}{l}{\footnotesize not the ground-truth condition.}\\
+\multicolumn{4}{l}{\footnotesize Both extractors are deterministic phrase matchers.}\\
+\multicolumn{4}{l}{\footnotesize Full-vocab reads the same noisy decoupled note as}\\
+\multicolumn{4}{l}{\footnotesize keyword; neither sees ground-truth condition labels.}\\
 \end{tabular}
 \end{table}
 
 Three things stand out in Table~\ref{tab:calibration}. First, the gap between
-lower and upper bounds spans 0.26--0.38 Pearson units, meaning a stronger
-extractor on the same text would produce substantially better framework decisions
-without any architectural change. Second, the fallback rate (share of notes
-where no signal fires and $\phi$ defaults to 1.0) is 28\% for S1, 43\% for S2,
-and 55\% for S3, which explains the ordering: more colloquial and abbreviated
-text generates more uninformative notes. Third, the bounds differ across
-scenarios, which rules out a shared evaluation artifact as the explanation.
+the conservative keyword and the full-vocabulary extractor spans 0.26--0.38
+Pearson units, meaning a better note-reader on the same text would produce
+substantially better framework decisions without any architectural change. Second,
+the keyword fallback rate (share of notes where no signal fires, $\phi$ defaults
+to 1.0) is 28\% for S1, 43\% for S2, and 55\% for S3. More colloquial and
+abbreviated text generates more uninformative notes, which explains the ordering
+of keyword $r$ values. Third, the two $r$ values differ across all three
+scenarios, ruling out a shared evaluation artifact.
 
 \smallskip
 \noindent\textbf{S1.}
-At $r=0.47$, the keyword extractor is significantly above chance on decoupled
-data, confirming the vocabulary carries genuine signal. The oracle ceiling
-$r=0.73$ reflects the note noise imposed during generation; organic technician
-notes would have different (and probably higher) noise characteristics.
+At $r=0.47$ the keyword extractor is substantially above chance on decoupled
+data, confirming its vocabulary carries real signal. The full-vocab ceiling
+$r=0.73$ is bounded by the note noise imposed during generation
+($p_\text{omit}=0.15$, $p_\text{mislabel}=0.25$); organic technician notes
+would have different noise characteristics.
 
 \smallskip
 \noindent\textbf{S2.}
-ATA codes concentrate several distinct conditions into nearly identical vocabulary,
-so even the oracle reader cannot reliably order them. The ceiling at 0.54 is
-lower than for S1 or S3 because the coding system itself destroys ordinal
-information.
+ATA codes collapse distinct conditions into near-identical vocabulary, so the
+full-vocab reader cannot reliably order them either. The ceiling at 0.54 is lower
+than S1 or S3 because the coding system itself destroys ordinal information
+before any extractor reads the note.
 
 \smallskip
 \noindent\textbf{S3.}
-The oracle ceiling (0.74) exceeds S1 (0.73) despite S3 having a lower keyword
-$r$. Consumer return language tends toward unambiguous categorical extremes:
-``dead,'' ``swollen battery,'' ``unopened box.'' The oracle maps these cleanly.
-IT notes contain more mixed-signal language (``fan loud but functional'') that
-partially confuses the classifier even when reading the note faithfully.
+The full-vocab ceiling (0.74) exceeds S1 (0.73) despite S3 having a weaker
+keyword $r$. Consumer return language uses unambiguous categorical extremes:
+``dead,'' ``swollen battery,'' ``unopened box.'' The full-vocab reader maps these
+cleanly. IT notes carry more mixed-signal phrasing (``fan loud but functional'')
+that partially confuses the classifier even when it reads the note correctly.
 
 \subsection{Error Analysis}
 
