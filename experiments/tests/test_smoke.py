@@ -151,3 +151,70 @@ class TestKeywordExtractor:
         result = ext.extract("Asset received.", rng)
         assert result.phi == 1.0
         assert result.sigma < 0.3
+
+
+class _FakeAnthropic:
+    """Offline stand-in for the Anthropic client: returns a fixed JSON payload
+    in the same shape messages.create() produces, so LLMExtractor is testable
+    without the anthropic package or a network call."""
+
+    class _Block:
+        type = "text"
+
+        def __init__(self, text):
+            self.text = text
+
+    class _Resp:
+        def __init__(self, text):
+            self.content = [_FakeAnthropic._Block(text)]
+
+    class _Messages:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def create(self, **kwargs):
+            import json
+            return _FakeAnthropic._Resp(json.dumps(self._payload))
+
+    def __init__(self, payload):
+        self.messages = _FakeAnthropic._Messages(payload)
+
+
+class TestLLMExtractor:
+    def test_parses_and_clips(self):
+        """Injected client → phi/sigma parsed from JSON and clipped to range."""
+        from src.s2s.extractors.llm import LLMExtractor
+        # phi over 1.0 and sigma over 1.0 must clip; no network used.
+        fake = _FakeAnthropic({"phi": 1.4, "sigma": 1.2, "condition": "clean"})
+        ext = LLMExtractor("s1", client=fake)
+        result = ext.extract("Routine decommission. Clean.", None)
+        assert result.phi == 1.0          # clipped from 1.4
+        assert result.sigma == 1.0        # clipped from 1.2
+
+    def test_response_cache_hits(self):
+        """A cached note is not re-sent to the client."""
+        from src.s2s.extractors.llm import LLMExtractor
+        cache = {"PSU failure. Burnt.": (0.05, 0.95)}
+        # Client that would raise if called — proves the cache short-circuits.
+        class _Boom:
+            class messages:
+                @staticmethod
+                def create(**kwargs):
+                    raise AssertionError("should not call API on cache hit")
+        ext = LLMExtractor("s1", client=_Boom(), response_cache=cache)
+        result = ext.extract("PSU failure. Burnt.", None)
+        assert result.phi == 0.05
+        assert result.sigma == 0.95
+
+    def test_missing_key_raises(self, monkeypatch):
+        """No injected client and no API key → clear RuntimeError, not a crash."""
+        from src.s2s.extractors.llm import LLMExtractor
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        ext = LLMExtractor("s2")  # no client injected
+        with pytest.raises(RuntimeError):
+            ext.extract("Corroded skin panel.", None)
+
+    def test_unknown_scenario_rejected(self):
+        from src.s2s.extractors.llm import LLMExtractor
+        with pytest.raises(ValueError):
+            LLMExtractor("s9")

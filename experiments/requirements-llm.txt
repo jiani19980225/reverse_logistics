@@ -1,0 +1,4 @@
+# Optional dependency for the LLM extractor (src/s2s/extractors/llm.py).
+# NOT required for the reproducible core (run_summary / run_calibration / run_kappa_sweep).
+# Install only if you want to run: python scripts/run_calibration.py --llm
+anthropic>=0.69

@@ -93,7 +93,8 @@ src/s2s/               core framework
   extractors/
     base.py              AbstractExtractor interface (accepts optional asset= arg)
     keyword.py           deterministic keyword classifier (lower bound)
-    strong.py            oracle-text reader (upper bound reference)
+    strong.py            full-vocabulary phrase matcher (note-reading ceiling)
+    llm.py               OPTIONAL Anthropic Claude extractor (needs API key)
   baselines/
     runner.py            named baselines: random, rule_based, xgboost, opt_only,
                          semantic_only, ours
@@ -110,8 +111,30 @@ scripts/
   make_tables.py         Table IV / ablation CSVs
   make_figures.py        capacity figure
 tests/
-  test_smoke.py          unit + integration smoke tests (14 tests)
+  test_smoke.py          unit + integration smoke tests (18 tests)
 outputs/                 generated CSVs (gitignored)
 paper/                   manuscript (LaTeX + PDF)
 calibration/             parameter calibration sources (CALIBRATION_SOURCES.md)
+requirements.txt         reproducible core dependencies
+requirements-llm.txt     OPTIONAL: anthropic SDK for the LLM extractor
 ```
+
+## Optional: LLM extractor
+
+The framework is extractor-agnostic. `src/s2s/extractors/llm.py` is a runnable
+Anthropic Claude implementation of the same `AbstractExtractor` interface used by
+the keyword and full-vocabulary extractors. It is **not** part of the reproducible
+core (LLM output is not bit-reproducible and is excluded from the seeded
+simulation), so it lives behind an optional dependency and an opt-in flag.
+
+```bash
+pip install -r requirements-llm.txt
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Adds an "LLM r" column to the calibration study on a bounded, cached subsample
+python scripts/run_calibration.py --seeds 0-29 --llm --llm-sample 60
+```
+
+Responses are cached under `outputs/llm_cache/` so re-runs are free and
+reproducible. Without the package or key, `--llm` prints a skip notice and the
+deterministic calibration runs unchanged.

@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -29,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.s2s.pipeline import load_config
 from src.s2s.extractors.keyword import KeywordExtractor
 from src.s2s.extractors.strong import StrongExtractor
+from src.s2s.extractors.llm import LLMExtractor
 from src.data_generators.common import generate_assets
 
 SCENARIOS = [
@@ -107,9 +109,56 @@ def calibrate_one(config: dict, scenario_key: str, seeds: list[int],
     return out
 
 
+def calibrate_llm(config: dict, scenario_key: str, seeds: list, sample: int,
+                  cache_path: Path, model: str) -> dict:
+    """LLM calibration on a bounded, deterministic subsample of notes.
+
+    Collects (note, true_yield) pairs across the seeds, subsamples `sample`
+    records with a fixed RNG (so the same records are scored every run), runs
+    the LLMExtractor, and correlates phi against true_yield. Responses are cached
+    to `cache_path` so re-runs are free and reproducible. Requires the anthropic
+    package + ANTHROPIC_API_KEY (raises RuntimeError otherwise).
+    """
+    base_yields = config["base_yields"]
+    records = []
+    for seed in seeds:
+        master = np.random.default_rng(seed)
+        gen_rng = np.random.default_rng(master.integers(0, 2**31))
+        assets = generate_assets(config, gen_rng)
+        for a in assets:
+            records.append((a["text"], a["true_yield_factor"]))
+
+    pick = np.random.default_rng(12345).permutation(len(records))[:sample]
+    sampled = [records[i] for i in pick]
+
+    cache = {}
+    if cache_path and cache_path.exists():
+        cache = {k: tuple(v) for k, v in json.loads(cache_path.read_text()).items()}
+
+    ext = LLMExtractor(scenario_key, model=model, response_cache=cache)
+    phis, ys = [], []
+    for text, y in sampled:
+        res = ext.extract(text, None)
+        phis.append(res.phi)
+        ys.append(y)
+
+    if cache_path:
+        cache_path.write_text(json.dumps({k: list(v) for k, v in cache.items()}))
+
+    r = stats.pearsonr(phis, ys)[0] if np.std(phis) > 1e-9 else float("nan")
+    return {"n": len(phis), "r_phi": float(r)}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", default="0-29")
+    ap.add_argument("--llm", action="store_true",
+                    help="Also run the optional Anthropic LLM extractor (needs "
+                         "anthropic + ANTHROPIC_API_KEY). Bounded subsample, cached.")
+    ap.add_argument("--llm-sample", type=int, default=60,
+                    help="Records per scenario for the LLM study (default 60).")
+    ap.add_argument("--llm-model", default="claude-opus-4-8",
+                    help="Claude model ID for the LLM extractor.")
     args = ap.parse_args()
     seeds = _parse_seeds(args.seeds)
     base_dir = Path(__file__).parent.parent
@@ -157,6 +206,30 @@ def main():
     print("Strong r  = upper bound (oracle reader that perfectly interprets the")
     print("            note text; bounded by note<->condition decoupling noise).")
     print("These are SYNTHETIC simulation bounds, not an LLM and not real public text.")
+
+    # ---- Optional LLM extractor study (opt-in; needs anthropic + API key) ----
+    if args.llm:
+        print()
+        print("=" * 72)
+        print(f"LLM EXTRACTOR ({args.llm_model}) — bounded subsample, cached")
+        print("=" * 72)
+        cache_dir = base_dir / "outputs" / "llm_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            print(f"{'Scenario':<28} {'N':>6} {'LLM r(phi,y)':>14}")
+            print("-" * 72)
+            for cfg_path, key, label in SCENARIOS:
+                cfg = load_config(base_dir / cfg_path)
+                cache_path = cache_dir / f"{key}_{args.llm_model}.json"
+                res = calibrate_llm(cfg, key, seeds, args.llm_sample,
+                                    cache_path, args.llm_model)
+                rphi = f"{res['r_phi']:.3f}" if not np.isnan(res["r_phi"]) else "undefined"
+                print(f"{label:<28} {res['n']:>6} {rphi:>14}")
+            print("-" * 72)
+            print(f"LLM r on the synthetic benchmark ({args.llm_sample} notes/scenario).")
+            print("Responses cached under outputs/llm_cache/ for reproducible re-runs.")
+        except RuntimeError as e:
+            print(f"[skipped] {e}")
 
 
 if __name__ == "__main__":
