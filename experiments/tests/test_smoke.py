@@ -218,3 +218,41 @@ class TestLLMExtractor:
         from src.s2s.extractors.llm import LLMExtractor
         with pytest.raises(ValueError):
             LLMExtractor("s9")
+
+
+class _FakeGemini:
+    """Offline stand-in for the google-genai client: .models.generate_content(...)
+    returns an object with a .text JSON string."""
+
+    class _Resp:
+        def __init__(self, text):
+            self.text = text
+
+    class _Models:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def generate_content(self, **kwargs):
+            import json
+            return _FakeGemini._Resp(json.dumps(self._payload))
+
+    def __init__(self, payload):
+        self.models = _FakeGemini._Models(payload)
+
+
+class TestGeminiExtractor:
+    def test_parses_and_clips(self):
+        from src.s2s.extractors.gemini import GeminiExtractor
+        fake = _FakeGemini({"phi": -0.2, "sigma": 0.7, "condition": "dead"})
+        ext = GeminiExtractor("s3", client=fake)
+        result = ext.extract("Dead. Won't turn on.", None)
+        assert result.phi == 0.01        # clipped up from -0.2
+        assert result.sigma == 0.7
+
+    def test_missing_key_raises(self, monkeypatch):
+        from src.s2s.extractors.gemini import GeminiExtractor
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        ext = GeminiExtractor("s1")  # no client injected
+        with pytest.raises(RuntimeError):
+            ext.extract("Routine decommission.", None)

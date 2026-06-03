@@ -1,4 +1,7 @@
-# Optional dependency for the LLM extractor (src/s2s/extractors/llm.py).
+# Optional dependencies for the LLM extractors (src/s2s/extractors/llm.py, gemini.py).
 # NOT required for the reproducible core (run_summary / run_calibration / run_kappa_sweep).
-# Install only if you want to run: python scripts/run_calibration.py --llm
+# Install only the provider you intend to use:
+#   --llm-provider anthropic  ->  anthropic  (ANTHROPIC_API_KEY)
+#   --llm-provider gemini     ->  google-genai  (GEMINI_API_KEY or GOOGLE_API_KEY)
 anthropic>=0.69
+google-genai>=1.0

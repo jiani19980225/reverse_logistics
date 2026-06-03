@@ -109,17 +109,26 @@ def calibrate_one(config: dict, scenario_key: str, seeds: list[int],
     return out
 
 
+def _make_llm_extractor(provider: str, scenario_key: str, model: str, cache: dict):
+    """Build the LLM extractor for the chosen provider, sharing a response cache."""
+    if provider == "gemini":
+        from src.s2s.extractors.gemini import GeminiExtractor
+        return GeminiExtractor(scenario_key, model=model, response_cache=cache)
+    if provider == "anthropic":
+        return LLMExtractor(scenario_key, model=model, response_cache=cache)
+    raise ValueError(f"Unknown LLM provider: {provider}")
+
+
 def calibrate_llm(config: dict, scenario_key: str, seeds: list, sample: int,
-                  cache_path: Path, model: str) -> dict:
+                  cache_path: Path, model: str, provider: str) -> dict:
     """LLM calibration on a bounded, deterministic subsample of notes.
 
     Collects (note, true_yield) pairs across the seeds, subsamples `sample`
-    records with a fixed RNG (so the same records are scored every run), runs
-    the LLMExtractor, and correlates phi against true_yield. Responses are cached
-    to `cache_path` so re-runs are free and reproducible. Requires the anthropic
-    package + ANTHROPIC_API_KEY (raises RuntimeError otherwise).
+    records with a fixed RNG (so the same records are scored every run), runs the
+    chosen LLM extractor, and correlates phi against true_yield. Responses are
+    cached to `cache_path` so re-runs are free and reproducible. Requires the
+    provider's SDK + API key (raises RuntimeError otherwise).
     """
-    base_yields = config["base_yields"]
     records = []
     for seed in seeds:
         master = np.random.default_rng(seed)
@@ -135,7 +144,7 @@ def calibrate_llm(config: dict, scenario_key: str, seeds: list, sample: int,
     if cache_path and cache_path.exists():
         cache = {k: tuple(v) for k, v in json.loads(cache_path.read_text()).items()}
 
-    ext = LLMExtractor(scenario_key, model=model, response_cache=cache)
+    ext = _make_llm_extractor(provider, scenario_key, model, cache)
     phis, ys = [], []
     for text, y in sampled:
         res = ext.extract(text, None)
@@ -149,16 +158,23 @@ def calibrate_llm(config: dict, scenario_key: str, seeds: list, sample: int,
     return {"n": len(phis), "r_phi": float(r)}
 
 
+_DEFAULT_LLM_MODEL = {"anthropic": "claude-opus-4-8", "gemini": "gemini-2.5-flash"}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", default="0-29")
     ap.add_argument("--llm", action="store_true",
-                    help="Also run the optional Anthropic LLM extractor (needs "
-                         "anthropic + ANTHROPIC_API_KEY). Bounded subsample, cached.")
+                    help="Also run the optional LLM extractor (needs the provider "
+                         "SDK + API key). Bounded subsample, cached.")
+    ap.add_argument("--llm-provider", default="anthropic",
+                    choices=["anthropic", "gemini"],
+                    help="LLM provider: anthropic (ANTHROPIC_API_KEY) or "
+                         "gemini (GEMINI_API_KEY). Default anthropic.")
     ap.add_argument("--llm-sample", type=int, default=60,
                     help="Records per scenario for the LLM study (default 60).")
-    ap.add_argument("--llm-model", default="claude-opus-4-8",
-                    help="Claude model ID for the LLM extractor.")
+    ap.add_argument("--llm-model", default=None,
+                    help="Model ID (default: claude-opus-4-8 / gemini-2.5-flash).")
     args = ap.parse_args()
     seeds = _parse_seeds(args.seeds)
     base_dir = Path(__file__).parent.parent
@@ -207,11 +223,12 @@ def main():
     print("            note text; bounded by note<->condition decoupling noise).")
     print("These are SYNTHETIC simulation bounds, not an LLM and not real public text.")
 
-    # ---- Optional LLM extractor study (opt-in; needs anthropic + API key) ----
+    # ---- Optional LLM extractor study (opt-in; needs provider SDK + API key) ----
     if args.llm:
+        model = args.llm_model or _DEFAULT_LLM_MODEL[args.llm_provider]
         print()
         print("=" * 72)
-        print(f"LLM EXTRACTOR ({args.llm_model}) — bounded subsample, cached")
+        print(f"LLM EXTRACTOR ({args.llm_provider}: {model}) — bounded subsample, cached")
         print("=" * 72)
         cache_dir = base_dir / "outputs" / "llm_cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -220,9 +237,9 @@ def main():
             print("-" * 72)
             for cfg_path, key, label in SCENARIOS:
                 cfg = load_config(base_dir / cfg_path)
-                cache_path = cache_dir / f"{key}_{args.llm_model}.json"
+                cache_path = cache_dir / f"{key}_{args.llm_provider}_{model}.json"
                 res = calibrate_llm(cfg, key, seeds, args.llm_sample,
-                                    cache_path, args.llm_model)
+                                    cache_path, model, args.llm_provider)
                 rphi = f"{res['r_phi']:.3f}" if not np.isnan(res["r_phi"]) else "undefined"
                 print(f"{label:<28} {res['n']:>6} {rphi:>14}")
             print("-" * 72)

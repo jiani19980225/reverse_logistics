@@ -583,11 +583,11 @@ steps; and all five baseline implementations. Key commands:
 \item \texttt{run\_kappa\_sweep.py --seeds 0-29} $\rightarrow$ Table~\ref{tab:kappa}
 \end{itemize}
 
-The benchmark also ships an optional LLM extractor (Anthropic Claude) behind the
-same interface, invoked with \texttt{run\_calibration.py --llm}. It is excluded
-from the seeded tables because its output is not bit-reproducible, but it lets a
-reviewer measure a third calibration point on the same notes with their own API
-key; we report no LLM numbers here, only the runnable path.
+The benchmark also ships optional LLM extractors (Anthropic Claude and Google
+Gemini) behind the same interface, invoked with \texttt{run\_calibration.py --llm}.
+They are excluded from the seeded tables because LLM output is not bit-reproducible,
+but they let a reviewer measure a third calibration point on the same notes with
+their own API key; we report no LLM numbers here, only the runnable path.
 
 All code, configurations, and calibration sources are released under the MIT
 License at
