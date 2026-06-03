@@ -1,8 +1,9 @@
 %----------------------------------------------------------------------
-% IEEE Access — Semantic Signal-Assisted Decision Support for Reverse
-% Logistics Resource Recovery Under Uncertainty
+% IEEE ICTAI 2026 (conference format) — Semantic Signal-Assisted Decision
+% Support for Reverse Logistics Resource Recovery Under Uncertainty
 %----------------------------------------------------------------------
-\documentclass[journal]{IEEEtran}
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
 
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
@@ -10,60 +11,52 @@
 \usepackage{booktabs}
 \usepackage{enumitem}
 \usepackage{url}
-\usepackage{hyperref}
-\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\usepackage[hidelinks]{hyperref}
 
 \begin{document}
 
 \title{Semantic Signal-Assisted Decision Support for\\
        Reverse Logistics Resource Recovery Under Uncertainty}
 
-\author{[Author~1],~\IEEEmembership{Member,~IEEE,}
-        \textit{Amazon}, Seattle, WA, USA
-        and
-        [Author~2], [Affiliation], [City, Country]%
-\thanks{Manuscript received \today.}}
-
-\markboth{IEEE ACCESS}%
-{Author \MakeLowercase{\textit{et al.}}: Semantic Signal-Assisted Decision Support}
+\author{%
+\IEEEauthorblockN{[Author~1]}
+\IEEEauthorblockA{\textit{Amazon}\\
+Seattle, WA, USA\\
+[email]}
+\and
+\IEEEauthorblockN{[Author~2]}
+\IEEEauthorblockA{\textit{[Department]}\\
+\textit{[Institution]}\\
+[City, Country]\\
+[email]}
+}
 
 \maketitle
 
 %----------------------------------------------------------------------
 \begin{abstract}
-Reverse logistics disposition decisions (refurbish, harvest components, recycle,
-or scrap) must be made under substantial uncertainty about product condition.
+Reverse logistics disposition decisions---refurbish, harvest components, recycle,
+or scrap---must be made under substantial uncertainty about product condition.
 Physical inspection resolves this uncertainty but costs \$50--200 per unit and
 30--60 technician-minutes, a bottleneck that becomes the binding constraint at
-volume.
-
-We present a decision-support framework that converts the unstructured text
-already accompanying returns---technician notes, maintenance logs, customer
-descriptions---into informative priors for a stochastic disposition optimizer.
-A modular semantic interface decouples text extraction from decision optimization:
-any classifier satisfying the interface can be substituted without modifying the
+volume. We present a decision-support framework that converts the unstructured
+text already accompanying returns (technician notes, maintenance logs, customer
+descriptions) into informative priors for a stochastic disposition optimizer.
+A modular semantic interface decouples text extraction from optimization: any
+classifier satisfying the interface can be substituted without modifying the
 downstream engine. An adaptive inspection policy uses extractor confidence to set
 inspection depth per asset, skipping physical testing where text evidence is
-strong and falling back to full component-level testing where it is not.
-
-We validate across three structurally distinct scenarios---enterprise IT
-decommission, aviation MRO, and consumer electronics returns---using a
-conservative keyword extractor as a lower bound on extraction quality.
-The complete framework (text extraction + adaptive inspection + greedy optimizer)
-beats the optimization-only inspect-all baseline (Opt-only) in all three
-scenarios (TRV lift 2.9--13.7\% vs.\ Opt-only, paired Wilcoxon $p{<}0.001$,
-30~seeds) while saving \$628--\$23,688 per batch in inspection cost.
-In S1, the adaptive inspection policy alone already beats Opt-only by 3.3\%,
-before the optimizer is added; in S2, a structured-feature baseline with full
-inspection outperforms the framework on absolute TRV because the keyword signal
-is too weak to compensate for reduced inspection coverage.
-
-Keyword-extractor calibration on the decoupled synthetic benchmark gives Pearson
-$r{=}0.47$ (IT notes), $r{=}0.32$ (aviation codes), and $r{=}0.36$ (consumer
-reviews). A full-vocabulary phrase matcher on the same benchmark reaches
-$r{=}0.73$, $r{=}0.54$, and $r{=}0.74$, establishing the note-reading ceiling
-for each text type. All results reproduce from the released Reverse Logistics
-Decision Benchmark (RLDB).
+strong and reserving full testing where it is not. We validate across three
+structurally distinct scenarios---enterprise IT decommission, aviation MRO, and
+consumer electronics returns---using a conservative keyword extractor as a lower
+bound on extraction quality. The complete framework beats the optimization-only
+inspect-all baseline in all three scenarios (recovery-value lift 2.9--13.7\%,
+paired Wilcoxon $p{<}0.001$, 30~seeds) while saving \$628--\$23,688 per batch in
+inspection cost. Keyword calibration on the decoupled synthetic benchmark gives
+Pearson $r{=}0.47$, $0.32$, and $0.36$ across scenarios; a full-vocabulary
+phrase matcher reaches $r{=}0.73$, $0.54$, and $0.74$, establishing the
+note-reading ceiling for each text type. All results reproduce from the released
+Reverse Logistics Decision Benchmark (RLDB).
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -590,21 +583,11 @@ steps; and all five baseline implementations. Key commands:
 \item \texttt{run\_kappa\_sweep.py --seeds 0-29} $\rightarrow$ Table~\ref{tab:kappa}
 \end{itemize}
 
-Repository:
+All code, configurations, and calibration sources are released under the MIT
+License at
 \href{https://github.com/shuan63/reverse_logistics}{github.com/shuan63/reverse\_logistics}.
-
-\subsection*{Data Availability}
-All code, configurations, and calibration sources are available in the RLDB
-repository under the MIT License. No proprietary data was used; synthetic data
-is generated deterministically from published seeds.
-
-\subsection*{Author Contributions (CRediT)}
-[Author 1]: Conceptualization, Methodology, Software, Formal analysis, Writing
-(original draft). [Author 2]: Validation, Writing (review and editing),
-Supervision. All authors reviewed and approved the final manuscript.
-
-\subsection*{Conflict of Interest}
-The authors declare no conflict of interest.
+No proprietary data is used; all synthetic data is generated deterministically
+from published seeds, so every table reproduces exactly.
 
 %----------------------------------------------------------------------
 \section{Conclusion}

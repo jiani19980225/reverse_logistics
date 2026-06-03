@@ -1,8 +1,12 @@
 # Paper: Semantic Signal-Assisted Decision Support for Reverse Logistics
 
+Target venue: **IEEE ICTAI 2026** (International Conference on Tools with
+Artificial Intelligence). The manuscript uses the IEEE conference template
+(`\documentclass[conference]{IEEEtran}`) and fits within the 8-page limit.
+
 ## Files
 
-- `main.tex` — full IEEE Access manuscript (IEEEtran format)
+- `main.tex` — IEEE conference manuscript (IEEEtran `conference` class)
 - `refs.bib` — BibTeX bibliography
 
 ## To compile
@@ -14,7 +18,9 @@ pdflatex main.tex
 pdflatex main.tex   # run twice for cross-references
 ```
 
-Requires a TeX distribution (e.g., TeX Live, MiKTeX, MacTeX).
+Requires a TeX distribution (e.g., TeX Live, MiKTeX, MacTeX). The IEEEtran
+class is bundled with all standard distributions, or available from
+CTAN / the IEEE Author Center.
 
 ## Key changes from prior draft (v7B)
 
