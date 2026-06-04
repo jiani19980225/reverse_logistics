@@ -256,3 +256,66 @@ class TestGeminiExtractor:
         ext = GeminiExtractor("s1")  # no client injected
         with pytest.raises(RuntimeError):
             ext.extract("Routine decommission.", None)
+
+
+class _FakeOpenAI:
+    """Offline stand-in for the OpenAI client (used by DeepSeekExtractor)."""
+
+    class _Msg:
+        def __init__(self, content):
+            self.content = content
+
+    class _Choice:
+        def __init__(self, content):
+            self.message = _FakeOpenAI._Msg(content)
+
+    class _Resp:
+        def __init__(self, content):
+            self.choices = [_FakeOpenAI._Choice(content)]
+
+    class _Completions:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def create(self, **kwargs):
+            import json
+            return _FakeOpenAI._Resp(json.dumps(self._payload))
+
+    class _Chat:
+        def __init__(self, payload):
+            self.completions = _FakeOpenAI._Completions(payload)
+
+    def __init__(self, payload):
+        self.chat = _FakeOpenAI._Chat(payload)
+
+
+class TestDeepSeekExtractor:
+    def test_parses_and_clips(self):
+        from src.s2s.extractors.deepseek import DeepSeekExtractor
+        fake = _FakeOpenAI({"phi": 0.08, "sigma": 0.92, "condition": "damaged"})
+        ext = DeepSeekExtractor("s1", client=fake)
+        result = ext.extract("PSU failure. Burn marks on mainboard.", None)
+        assert result.phi == pytest.approx(0.08, abs=0.01)
+        assert result.sigma == pytest.approx(0.92, abs=0.01)
+
+    def test_cache_hit_skips_api(self):
+        from src.s2s.extractors.deepseek import DeepSeekExtractor
+        cache = {"Clean unit. No issues.": (0.95, 0.90)}
+
+        class _Boom:
+            class chat:
+                class completions:
+                    @staticmethod
+                    def create(**kwargs):
+                        raise AssertionError("should not reach API on cache hit")
+
+        ext = DeepSeekExtractor("s1", client=_Boom(), response_cache=cache)
+        r = ext.extract("Clean unit. No issues.", None)
+        assert r.phi == pytest.approx(0.95)
+
+    def test_missing_key_raises(self, monkeypatch):
+        from src.s2s.extractors.deepseek import DeepSeekExtractor
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        ext = DeepSeekExtractor("s2")
+        with pytest.raises(RuntimeError):
+            ext.extract("Corroded panel.", None)

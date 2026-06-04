@@ -114,6 +114,9 @@ def _make_llm_extractor(provider: str, scenario_key: str, model: str, cache: dic
     if provider == "gemini":
         from src.s2s.extractors.gemini import GeminiExtractor
         return GeminiExtractor(scenario_key, model=model, response_cache=cache)
+    if provider == "deepseek":
+        from src.s2s.extractors.deepseek import DeepSeekExtractor
+        return DeepSeekExtractor(scenario_key, model=model, response_cache=cache)
     if provider == "anthropic":
         return LLMExtractor(scenario_key, model=model, response_cache=cache)
     raise ValueError(f"Unknown LLM provider: {provider}")
@@ -158,7 +161,11 @@ def calibrate_llm(config: dict, scenario_key: str, seeds: list, sample: int,
     return {"n": len(phis), "r_phi": float(r)}
 
 
-_DEFAULT_LLM_MODEL = {"anthropic": "claude-opus-4-8", "gemini": "gemini-2.5-flash"}
+_DEFAULT_LLM_MODEL = {
+    "anthropic": "claude-opus-4-8",
+    "gemini": "gemini-2.5-flash",
+    "deepseek": "deepseek-chat",
+}
 
 
 def main():
@@ -168,7 +175,7 @@ def main():
                     help="Also run the optional LLM extractor (needs the provider "
                          "SDK + API key). Bounded subsample, cached.")
     ap.add_argument("--llm-provider", default="anthropic",
-                    choices=["anthropic", "gemini"],
+                    choices=["anthropic", "gemini", "deepseek"],
                     help="LLM provider: anthropic (ANTHROPIC_API_KEY) or "
                          "gemini (GEMINI_API_KEY). Default anthropic.")
     ap.add_argument("--llm-sample", type=int, default=60,
