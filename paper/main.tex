@@ -588,14 +588,19 @@ without inspecting every unit.
 
 \subsection{Limitations}
 
-All simulation data is synthetic, calibrated from real sources. Organic notes
-from actual operations may have noise characteristics requiring extractor
-recalibration. The $\sim$24\% S2 error rate confirms the framework should not
-operate autonomously in safety-critical domains; it should direct triage effort,
-not replace mandated physical inspection. The optimization is single-period;
-multi-period dynamics with inventory carry-over remain open. The $p{<}0.001$
-result measures simulation stability across seeds, not generalization across
-datasets or extractors.
+All simulation data is synthetic, calibrated from real sources; organic notes
+from actual operations may carry noise that requires extractor recalibration, and
+the real-world case of bare ATA-coded fields (rather than the descriptive SDR
+narratives modeled here) is untested. Even the low S2 overestimation rate (2.5\%)
+is unacceptable for autonomous operation in a safety-critical domain, so the
+framework there should direct triage and inspection effort, not replace mandated
+physical inspection. The LLM extractor was evaluated for calibration only; running
+it through the full seeded TRV pipeline---and thus testing whether higher
+calibration translates into higher recovery value---is left to future work because
+LLM output is not bit-reproducible. The optimization is single-period;
+multi-period dynamics with inventory carry-over remain open. Finally, the
+$p{<}0.001$ result measures simulation stability across seeds, not generalization
+across datasets or extractors.
 
 \subsection{RLDB Benchmark and Reproducibility}
 
