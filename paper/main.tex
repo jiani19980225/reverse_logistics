@@ -98,10 +98,10 @@ environment, and economic scale:
 
 \begin{itemize}[leftmargin=*,noitemsep]
 \item \textbf{S1 (IT Infrastructure):} Planned decommissions, descriptive
-  technician notes. Keyword calibration $r{=}0.47$; full-vocabulary ceiling
-  $r{=}0.73$. The combined framework lifts TRV 13.7\% over Opt-only.
-  The adaptive inspection policy alone (without the optimizer) contributes 3.3\%
-  independently.
+  technician notes. Calibration climbs keyword $0.47$ $\rightarrow$ phrase-matcher
+  $0.73$ $\rightarrow$ LLM $0.81$. The combined framework lifts TRV 13.7\% over
+  Opt-only; the adaptive inspection policy alone (without the optimizer)
+  contributes 3.3\% independently.
 
 \item \textbf{S2 (Aviation MRO):} FAA Part~145 mandates, standardized
   maintenance codes, $r{=}0.32$. Text + adaptive inspection without the optimizer
@@ -124,10 +124,10 @@ environment, and economic scale:
 \item An adaptive inspection policy that sets inspection depth from extractor
   confidence---effective as a standalone component in high-signal domains,
   and requiring the optimizer in low-signal domains.
-\item A three-scenario simulation study with explicit calibration bounds
-  (conservative keyword vs.\ full-vocabulary ceiling), establishing where text
-  signals add value, where they are advisory, and where they enable volume triage.
-  Code and benchmark are fully released.
+\item A three-scenario simulation study with a calibration ladder of three real
+  extractors (keyword, full-vocabulary phrase matcher, and a deployed LLM),
+  establishing where text signals add value, where they are advisory, and where
+  they enable volume triage. Code and benchmark are fully released.
 \end{enumerate}
 
 %----------------------------------------------------------------------
@@ -412,12 +412,12 @@ Lift vs.\ Opt-only
 \smallskip\noindent\textbf{S1: IT Infrastructure.}
 The \$73K TRV lift over Opt-only ($+13.7\%$) separates cleanly into two sources.
 The adaptive inspection policy alone (Sem.-only, no optimizer) adds \$18K
-($+3.3\%$) by skipping \$32K in inspection cost that every inspect-everything
-baseline pays unconditionally. The greedy optimizer on top adds another \$55K
-by routing assets to the right recovery level. Both components contribute
-independently. Full demand coverage (DCR 100\%) shows that a $r{=}0.47$ text
-signal is sufficient for the optimizer to route every asset to a positive-value
-recovery path.
+($+3.3\%$); it also saves \$32K in inspection (ICS), \$24K more than Opt-only's
+\$8K, by skipping physical tests where the text signal is strong. The greedy
+optimizer on top adds another \$55K by routing assets to the right recovery level.
+Both components contribute independently. Full demand coverage (DCR 100\%) shows
+that an $r{=}0.47$ text signal is sufficient for the optimizer to route every
+asset to a positive-value recovery path.
 
 \smallskip\noindent\textbf{S2: Aviation MRO.}
 The value decomposition here differs structurally from S1. Sem.-only (text +
@@ -506,41 +506,51 @@ benchmark, so the reported $r$ reproduces exactly without re-paying API cost.
 \subsection{Error Analysis and Case Studies}
 
 \noindent\textbf{Error analysis.}
-Errors are asset-level cases where the framework's realized recovery falls more
-than \$50 below Opt-only on the same asset. The dominant mode is
-overestimation: $\phi$ is assigned higher than warranted, the system skips
-inspection, and the asset is worse than the text implied. Error rates are
-approximate: $\sim$9\% in S1 (45/500~assets), $\sim$24\% in S2 (118/500),
-near-zero in S3. Total estimated loss: \$31K (S1), \$70K (S2), negligible (S3),
-below the semantic lift in every case.
+The failure mode of interest is \emph{overestimation}: the policy skips
+inspection on high confidence ($\sigma{\geq}\tau_h$) while the extractor reports a
+high context factor ($\phi{>}0.7$), yet the asset's true yield is low
+($<0.30$)---a confidently-kept bad unit that was never physically checked. Over
+30 seeds the rate is 1.6\% in S1, 2.5\% in S2, and 0.0\% in S3 (computed by
+\texttt{src/s2s} over the asset populations; reproducible). The rate is highest in
+S2: with weak text calibration ($r{=}0.32$) the keyword extractor more often reads
+a degraded unit as serviceable, which is the concrete reason aviation must run in
+advisory mode with mandated inspection retained. The S3 rate is essentially zero
+because consumer language rarely yields a confident-but-wrong ``good'' reading.
 
 \smallskip\noindent\textbf{Case 1: Correct skip (S1).}
 Note: ``\textit{Routine decommission. All components seated properly. No
-corrosion.}'' Extractor: $\phi{=}0.95$, $\sigma{=}0.95$. Asset skips inspection
-and proceeds directly to $L_2$ disassembly, recovering \$4,200 while saving
-\$200 in inspection cost. Inspection targeting works as intended.
+corrosion.}'' The keyword extractor returns $\phi{\approx}0.93$,
+$\sigma{\approx}0.88$ (mean over RNG draws). High confidence skips the \$75 L2
+inspection; the high $\phi$ sends the unit to component harvest. Inspection
+targeting acting on a genuine signal.
 
-\smallskip\noindent\textbf{Case 2: Overestimation failure (S2).}
-SDR: ``\textit{Oil on bottom of \#1 engine fan cowl. Replaced filter and
-packing.}'' Extractor detects ``replaced'' and emits $\phi{=}0.98$,
-$\sigma{=}0.85$. True yield factor: 0.59---the repair addressed a symptom, not
-the cause. Overestimation costs \$8,669 against the full-inspection baseline.
-A keyword classifier cannot infer whether a logged repair resolved the underlying
-defect; this case explains why S2 must operate in advisory mode with a human in
-the loop.
+\smallskip\noindent\textbf{Case 2: Correct flag (S1).}
+Note: ``\textit{PSU failure. Visible burn marks on mainboard near power connector
+J12. CPU smells burnt.}'' The extractor returns $\phi{\approx}0.39$,
+$\sigma{\approx}0.87$. Confidence is high, so inspection is skipped---but the low
+$\phi$ routes the unit to scrap, avoiding wasted disassembly. Confidence
+($\sigma$) and condition ($\phi$) are independent axes: the model is confident the
+unit is damaged. These two cases are reproducible traces of the keyword extractor
+on benchmark template notes, not hand-picked illustrations.
 
 \subsection{Sensitivity Analysis}
 
 \noindent\textbf{Capacity constraints.}
-At 50\% of baseline capacity, S1 TRV drops 43\% and S2 drops 23\%. The engine
-concentrates on the highest-value assets; selective harvesting is smooth and
-proportionate.
+Halving processing capacity (50\% of baseline) reduces Ours TRV by 32\% in S2 and
+26\% in S3 but only 3\% in S1 (30 seeds, \texttt{capacity\_fraction=0.5}). The
+difference is the per-asset processing cost: S2's $L_2$ overhaul (150~min) and
+S3's high volume make capacity the binding constraint, whereas S1's lighter
+disassembly (32~min) leaves slack, so the value-ranked allocator still captures
+nearly all recoverable value at half capacity. Selective harvesting under a
+binding constraint is exactly the intended behavior.
 
 \noindent\textbf{Confidence thresholds.}
-S1/S2 favor $\tau_h{=}0.5$, $\tau_l{=}0.25$ (aggressive skip). S3 favors
-$\tau_l{=}0.45$. Moderate confidence is sufficient to skip inspection profitably
-because the expected cost of a wrong skip (\$200--700) is often less than the
-certain cost of universal inspection (\$120--200 per asset).
+We use $\tau_h{=}0.5$, $\tau_l{=}0.25$ for the high-value scenarios (S1, S2) and a
+narrower gap ($\tau_l{=}0.45$) for S3, set from a cost argument rather than tuned
+to the results: a wrong skip costs at most the asset's realized value, which for
+high-value assets is usually less than paying \$75--100 to inspect every unit, so
+an aggressive skip threshold is justified; colloquial S3 text rarely earns high
+confidence, so S3 needs a tighter band.
 
 \noindent\textbf{$\kappa$ sensitivity.}
 Table~\ref{tab:kappa} confirms that $\kappa$ does not change which assets get
