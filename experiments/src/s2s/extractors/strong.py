@@ -1,20 +1,20 @@
-"""Full-vocabulary phrase-matching extractor — note-reading ceiling for calibration.
+"""Full-vocabulary phrase-matching extractor — a calibration reference point.
 
 This is NOT an LLM and NOT an oracle. It is a deterministic phrase matcher with
-complete condition vocabulary coverage for each scenario. It reads the same
-noisy, decoupled note as the KeywordExtractor and cannot see the ground-truth
-condition. Neither extractor is an oracle. The reason both stay below r=1.0 is
-the note itself: the imposed generation noise (p_omit=0.15, p_mislabel=0.25)
-sets a ceiling no phrase-matching classifier reading only the note can exceed.
+complete condition vocabulary coverage for each scenario, reading the same noisy,
+decoupled note as the KeywordExtractor (it cannot see the ground-truth condition).
+It emits ONE discrete phi per recognized condition. The note generation noise
+(p_omit=0.15, p_mislabel=0.25) keeps any note-reader below r=1.0.
 
-Paired with KeywordExtractor this brackets achievable phrase-matching calibration:
-  - KeywordExtractor -> conservative (brittle vocabulary, high fallback rate)
-  - StrongExtractor  -> full-vocab ceiling (complete vocabulary, bounded by note noise)
+It is a reference point between the brittle keyword matcher and a real LLM, NOT an
+absolute ceiling: because it maps each condition to a fixed phi and misreads
+phrasing variants, an LLM that emits graded phi typically scores HIGHER (see the
+LLM column produced by run_calibration.py --llm).
 
-Calibration results (30 seeds, decoupled benchmark):
-  S1: keyword r=0.47, full-vocab r=0.73  (gap: note-reading quality)
-  S2: keyword r=0.32, full-vocab r=0.54  (ceiling also lower: ATA code ambiguity)
-  S3: keyword r=0.36, full-vocab r=0.74  (larger gap: colloquial text still readable)
+Calibration ladder (decoupled benchmark; LLM = deepseek-chat, 60 notes/scenario):
+  S1: keyword 0.47 < phrase-matcher 0.73 < LLM 0.81
+  S2: keyword 0.32 < phrase-matcher 0.54 < LLM 0.83
+  S3: keyword 0.36 < phrase-matcher 0.74 < LLM 0.78
 """
 
 import numpy as np

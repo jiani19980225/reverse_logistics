@@ -52,11 +52,12 @@ consumer electronics returns---using a conservative keyword extractor as a lower
 bound on extraction quality. The complete framework beats the optimization-only
 inspect-all baseline in all three scenarios (recovery-value lift 2.9--13.7\%,
 paired Wilcoxon $p{<}0.001$, 30~seeds) while saving \$628--\$23,688 per batch in
-inspection cost. Keyword calibration on the decoupled synthetic benchmark gives
-Pearson $r{=}0.47$, $0.32$, and $0.36$ across scenarios; a full-vocabulary
-phrase matcher reaches $r{=}0.73$, $0.54$, and $0.74$, establishing the
-note-reading ceiling for each text type. All results reproduce from the released
-Reverse Logistics Decision Benchmark (RLDB).
+inspection cost. Calibration rises monotonically with extractor quality on the
+same notes: a brittle keyword matcher gives Pearson $r{=}0.47/0.32/0.36$ across
+scenarios, a full-vocabulary phrase matcher $0.73/0.54/0.74$, and a deployed LLM
+(DeepSeek) $0.81/0.83/0.78$---demonstrating the extractor-agnostic claim with
+three real points, all consumed through one interface. All results reproduce from
+the released Reverse Logistics Decision Benchmark (RLDB).
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -227,14 +228,16 @@ return phrasing (S3). When no vocabulary signal fires, the classifier falls back
 to $\phi{=}1.0$ (uninformative prior), triggering full inspection. This is a
 deliberate lower bound.
 
-\smallskip\noindent\textbf{Full-vocabulary reference extractor.}
-A second deterministic phrase matcher covers the complete condition vocabulary
-per scenario and maps the described condition to a recoverability estimate via a
-table fixed before extraction (Table~\ref{tab:calibration}). It reads the same
-noisy, decoupled note as the keyword classifier and cannot see the ground-truth
-condition label. Neither extractor is an oracle; both are bounded by the
-note generation noise ($p_\text{omit}{=}0.15$, $p_\text{mislabel}{=}0.25$),
-which limits $r$ to below 1.0 for any note-reading classifier.
+\smallskip\noindent\textbf{Reference extractors for calibration.}
+We compare the keyword classifier against two stronger readers of the same noisy,
+decoupled note (Table~\ref{tab:calibration}): a deterministic phrase matcher that
+covers the complete condition vocabulary per scenario and maps it to a
+recoverability estimate via a table fixed before extraction, and an optional LLM
+(Section~\ref{sec:calibration}). None sees the ground-truth condition label, and
+all are bounded below $r{=}1.0$ by the note generation noise
+($p_\text{omit}{=}0.15$, $p_\text{mislabel}{=}0.25$). The phrase matcher emits one
+discrete $\phi$ per condition; the LLM emits a graded $\phi$ and, as
+Section~\ref{sec:calibration} shows, reads the notes more accurately.
 
 The context factor $\phi(m)$ adjusts baseline yield downward when negative
 signals are present; positive signals cannot push $\phi$ above 1.0. Multiple
@@ -451,40 +454,54 @@ phrase matcher that covers the complete condition vocabulary per scenario.
 
 \begin{table}[!t]
 \caption{Extractor Calibration on the Decoupled Synthetic Benchmark
-  ($r$ = Pearson between $\phi$ and true yield, pooled over 30 seeds).
-  Neither extractor sees ground-truth condition labels.}
+  ($r$ = Pearson between $\phi$ and true yield). No extractor sees
+  ground-truth condition labels.}
 \label{tab:calibration}
 \centering\small
 \begin{tabular}{lccc}
 \toprule
-Scenario & $N$ & Keyword & Full-vocab \\
-         &     & (conservative) & (note-reading ceiling) \\
+Scenario & Keyword & Phrase-matcher & LLM \\
+         & (conservative) & (full vocab) & (DeepSeek) \\
 \midrule
-S1: IT Infrastructure    & 15{,}000 & 0.47 & 0.73 \\
-S2: Aviation MRO         & 15{,}000 & 0.32 & 0.54 \\
-S3: Consumer Electronics & 30{,}000 & 0.36 & 0.74 \\
+S1: IT Infrastructure    & 0.47 & 0.73 & 0.81 \\
+S2: Aviation MRO         & 0.32 & 0.54 & 0.83 \\
+S3: Consumer Electronics & 0.36 & 0.74 & 0.78 \\
 \bottomrule
+\multicolumn{4}{l}{\footnotesize Keyword and phrase-matcher pooled over the full
+  corpus (15{,}000 /}\\
+\multicolumn{4}{l}{\footnotesize 30{,}000 evaluations, 30 seeds). LLM on a
+  60-note/scenario subsample}\\
+\multicolumn{4}{l}{\footnotesize (\texttt{deepseek-chat}, $T{=}0$; 95\% CI
+  $\approx\pm0.07$ at $n{=}60$; cached).}\\
 \end{tabular}
 \end{table}
 
-Three observations. First, the gap spans 0.26--0.38 Pearson units across
-scenarios: a better note-reader on the same text would substantially improve
-framework decisions without any architectural change, confirming the
-extractor-agnostic design. Second, keyword fallback rates (share of notes where
-no signal fires, $\phi{\gets}1.0$) are 28\% (S1), 43\% (S2), and 55\% (S3),
-explaining the ordering of keyword $r$ values---more colloquial and abbreviated
-text generates more uninformative notes. Third, the values differ across all
-three scenarios, ruling out a shared evaluation artifact.
+The three extractors form a monotone ladder on the same decoupled notes---keyword
+(conservative) below the full-vocabulary phrase matcher below the LLM---with no
+change to the decision architecture. This is the extractor-agnostic property made
+concrete: calibration rises with extractor quality from a brittle keyword matcher
+($r{=}0.32$--$0.47$) through a complete phrase matcher ($0.54$--$0.74$) to a
+deployed LLM ($0.78$--$0.83$), and the framework consumes any of them through one
+interface. (Keyword fallback rates---notes where no vocabulary signal fires and
+$\phi{\gets}1.0$---are 28/43/55\% for S1/S2/S3, which explains the ordering of the
+keyword column: more colloquial or abbreviated text yields more uninformative
+notes.)
 
-S2 is the only scenario where the full-vocabulary ceiling (0.54) is
-substantially lower than S1/S3. ATA maintenance codes collapse distinct
-conditions into near-identical vocabulary; even a complete phrase matcher cannot
-reliably order them. This is an information-theoretic limitation of the coding
-system, not of the extractor architecture. S3 shows the opposite: consumer
-return language uses unambiguous categorical extremes (``dead,'' ``swollen
-battery,'' ``unopened box'') that map cleanly even when the note is noisy, which
-is why the full-vocab ceiling (0.74) exceeds S1 (0.73) despite S3 having a
-weaker keyword $r$.
+Two points deserve care. First, the LLM exceeds the phrase matcher in every
+scenario, so the phrase matcher is \emph{not} a true ceiling: it assigns one
+discrete $\phi$ per recognized condition and misreads phrasing variants, whereas
+the LLM recovers the described condition more robustly and emits a graded $\phi$
+that tracks recovery probability more closely. Second, the largest gain is on S2
+(0.54 to 0.83). We had expected S2 to be hardest because standardized aviation
+codes can discretize condition into coarse bins; the LLM result shows that our
+synthetic SDR notes, which are descriptive narratives rather than bare codes,
+still carry recoverable ordinal signal. The low keyword and phrase-matcher $r$ on
+S2 therefore reflect those extractors' limits, not an information ceiling of the
+text---we state this plainly rather than the stronger claim of an earlier draft.
+Real ATA-coded fields, as opposed to descriptive SDR narratives, remain a separate
+and untested case. The LLM column is excluded from the seeded simulation because
+its output is not bit-reproducible; the scored responses are cached in the
+benchmark, so the reported $r$ reproduces exactly without re-paying API cost.
 
 \subsection{Error Analysis and Case Studies}
 
@@ -583,11 +600,12 @@ steps; and all five baseline implementations. Key commands:
 \item \texttt{run\_kappa\_sweep.py --seeds 0-29} $\rightarrow$ Table~\ref{tab:kappa}
 \end{itemize}
 
-The benchmark also ships optional LLM extractors (Anthropic Claude and Google
-Gemini) behind the same interface, invoked with \texttt{run\_calibration.py --llm}.
-They are excluded from the seeded tables because LLM output is not bit-reproducible,
-but they let a reviewer measure a third calibration point on the same notes with
-their own API key; we report no LLM numbers here, only the runnable path.
+The benchmark ships LLM extractors (Anthropic Claude, Google Gemini, and DeepSeek)
+behind the same interface, invoked with \texttt{run\_calibration.py --llm}. The
+LLM column of Table~\ref{tab:calibration} was produced this way with
+\texttt{deepseek-chat}; the scored responses are cached in the repository, so the
+reported $r$ values reproduce exactly with no API key or further cost. A reviewer
+with a key can rerun against any supported provider.
 
 All code, configurations, and calibration sources are released under the MIT
 License at
@@ -615,12 +633,13 @@ inspection achieves higher absolute TRV because the text signal cannot compensat
 for reduced coverage. In consumer electronics, where per-unit inspection is
 rarely economic regardless, the contribution is categorical triage at volume.
 
-The full-vocabulary calibration ceiling in Table~\ref{tab:calibration} quantifies
-the extraction headroom: the same decision architecture, with a stronger extractor,
-would reach $r{=}0.73$ on S1 and $r{=}0.74$ on S3 on the same synthetic
-benchmark. Every number in this paper is a floor, bounded by the deliberate
-conservatism of the keyword classifier. The gap to the ceiling is achievable
-without changing the framework architecture.
+The calibration ladder in Table~\ref{tab:calibration} quantifies the extraction
+headroom directly. On the same notes, calibration climbs from the brittle keyword
+matcher ($r{=}0.32$--$0.47$) to a deployed LLM ($r{=}0.78$--$0.83$) with no change
+to the decision architecture. Every recovery number in this paper is therefore a
+floor set by the deliberately conservative keyword extractor; a better reader
+plugs into the same interface and raises calibration measurably, which is the
+operational meaning of the extractor-agnostic design.
 
 %----------------------------------------------------------------------
 \bibliographystyle{IEEEtran}
